@@ -4,10 +4,13 @@ require('./configure');
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import express from 'express';
+import session from 'express-session';
 import { stdSerializers } from 'pino';
 import pinoHttp from 'pino-http';
 
 import { apiRouter } from './api-router';
+import { setupBullBoard } from './bull-board';
+import { EnvVars } from './config';
 import logger from './utils/logger';
 
 const PINO_LOGGER = {
@@ -36,7 +39,10 @@ const app = express();
 app.use(pinoHttp(PINO_LOGGER));
 app.use(cors());
 app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: false }));
+app.use(session({ secret: EnvVars.ADMIN_PASSWORD, saveUninitialized: true, resave: true }));
 
+setupBullBoard(app);
 app.use('/api', apiRouter);
 
 // start the server listening for requests

@@ -4,41 +4,70 @@ import {
   Network,
   AssetTransfersWithMetadataParams,
   SortingOrder,
-  AssetTransfersWithMetadataResult
+  AssetTransfersWithMetadataResult,
+  Log
 } from 'alchemy-sdk';
 import { uniqBy } from 'lodash';
 import memoizee from 'memoizee';
 
 import { EnvVars } from '../config';
 import { CodedError } from '../utils/errors';
+import { createQueuedFetchJobs } from '../utils/queued-fetch-jobs';
 
 const ETH_TOKEN_SLUG = 'eth' as const;
 const TR_PSEUDO_LIMIT = 50;
+
+type AlchemyQueueJobName = 'transactions';
+interface AlchemyQueueJobData {
+  chainId: number;
+  accAddress: string;
+  contractAddress?: string;
+  olderThanBlockHeight?: `${number}`;
+}
+
+const { fetch, queue } = createQueuedFetchJobs<AlchemyQueueJobName, AlchemyQueueJobData, string>(
+  'alchemy-requests',
+  (name, { chainId, accAddress, contractAddress, olderThanBlockHeight }) =>
+    `${name}:${chainId}:${accAddress.toLowerCase()}:${contractAddress?.toLowerCase()}:${olderThanBlockHeight}`,
+  async (_name, { chainId, accAddress, contractAddress, olderThanBlockHeight }) => {
+    const alchemy = getAlchemyClient(chainId);
+
+    const transfers = await fetchTransfers(alchemy, accAddress, contractAddress, olderThanBlockHeight);
+
+    const approvals =
+      !transfers.length || contractAddress === ETH_TOKEN_SLUG
+        ? []
+        : await fetchApprovals(
+            alchemy,
+            accAddress,
+            contractAddress,
+            transfers.at(0)!.blockNum,
+            // Loading approvals withing the gap of received transfers.
+            // TODO: Mind the case of reaching response items number limit & not reaching block range.
+            transfers.at(-1)!.blockNum
+          );
+
+    return JSON.stringify({ transfers, approvals });
+  },
+  5
+);
+
+export const alchemyRequestsQueue = queue;
 
 export async function fetchTransactions(
   chainId: number,
   accAddress: string,
   contractAddress?: string,
   olderThanBlockHeight?: `${number}`
-) {
-  const alchemy = getAlchemyClient(chainId);
-
-  const transfers = await fetchTransfers(alchemy, accAddress, contractAddress, olderThanBlockHeight);
-
-  const approvals =
-    !transfers.length || contractAddress === ETH_TOKEN_SLUG
-      ? []
-      : await fetchApprovals(
-          alchemy,
-          accAddress,
-          contractAddress,
-          transfers.at(0)!.blockNum,
-          // Loading approvals withing the gap of received transfers.
-          // TODO: Mind the case of reaching response items number limit & not reaching block range.
-          transfers.at(-1)!.blockNum
-        );
-
-  return { transfers, approvals };
+): Promise<{ transfers: AssetTransfersWithMetadataResult[]; approvals: Log[] }> {
+  return JSON.parse(
+    await fetch('transactions', {
+      chainId,
+      accAddress,
+      contractAddress,
+      olderThanBlockHeight
+    })
+  );
 }
 
 async function fetchTransfers(
