@@ -1,19 +1,48 @@
-import { Queue, QueueEvents, QueueEventsListener, QueueEventsProducer, Worker } from 'bullmq';
+import { Queue, QueueEvents, QueueEventsListener, QueueEventsProducer, UnrecoverableError, Worker } from 'bullmq';
+import { RateLimiterRedis, RateLimiterRes } from 'rate-limiter-flexible';
 
 import { redisClient } from '../redis';
 
-export const createQueuedFetchJobs = <Name extends string, Input, SuccessOutput extends string | number>(
-  queueName: string,
-  getId: (name: Name, data: Input) => string,
-  getOutput: (name: Name, data: Input) => Promise<SuccessOutput>,
-  concurrency = 1,
-  timeout = 30_000
-) => {
+interface QueuedFetchJobsConfig<
+  Name extends string,
+  Inputs extends Record<Name, unknown>,
+  SuccessOutput extends string | number
+> {
+  queueName: string;
+  concurrency?: number;
+  costs: Record<Name, number>;
+  limitDuration: number;
+  limitAmount: number;
+  timeout?: number;
+  getId: <N extends Name>(name: N, data: Inputs[N]) => string;
+  getOutput: <N extends Name>(name: N, data: Inputs[N]) => Promise<SuccessOutput>;
+}
+
+export const createQueuedFetchJobs = <
+  Name extends string,
+  Inputs extends Record<Name, unknown>,
+  SuccessOutput extends string | number
+>({
+  queueName,
+  costs,
+  limitAmount,
+  concurrency = Math.floor(limitAmount / Math.min(...Object.values<number>(costs))),
+  limitDuration,
+  timeout = 30_000,
+  getId,
+  getOutput
+}: QueuedFetchJobsConfig<Name, Inputs, SuccessOutput>) => {
+  const rateLimiter = new RateLimiterRedis({
+    storeClient: redisClient,
+    points: limitAmount,
+    duration: limitDuration / 1000,
+    keyPrefix: `rate-limiter:${queueName}`
+  });
   type WrappedOutput = { output: SuccessOutput };
-  const queue = new Queue<Input, void, Name>(queueName, {
+  const queue = new Queue<Inputs[Name], void, Name>(queueName, {
     connection: redisClient,
     defaultJobOptions: {
-      attempts: 5,
+      attempts: Math.floor(Math.log2(timeout / 1000)) + 1,
       backoff: {
         type: 'exponential',
         delay: 1000
@@ -33,20 +62,39 @@ export const createQueuedFetchJobs = <Name extends string, Input, SuccessOutput 
   const queueEventsProducer = new QueueEventsProducer(queueName, { connection: redisClient });
   const queueEvents = new QueueEvents(queueName, { connection: redisClient });
   type CustomListener = QueueEventsListener & Record<string, (args: WrappedOutput, id: string) => void>;
-  const worker = new Worker<Input, void, Name>(
+  const worker = new Worker<Inputs[Name], void, Name>(
     queueName,
     async job => {
       const { name, data } = job;
+      const waitStartTs = Date.now();
+      await new Promise<void>((res, rej) => {
+        const doConsumeAttempt = async () => {
+          try {
+            await rateLimiter.consume('points', costs[name]);
+            res();
+          } catch (e) {
+            if (Date.now() - waitStartTs > timeout) {
+              rej(new UnrecoverableError('Timed out'));
+            }
+
+            if (e instanceof RateLimiterRes) {
+              setTimeout(doConsumeAttempt, e.msBeforeNext || 100);
+            }
+          }
+        };
+        doConsumeAttempt();
+      });
+
       const output = await getOutput(name, data);
       await queueEventsProducer.publishEvent<{ eventName: string } & WrappedOutput>({
         eventName: getId(name, data),
         output
       });
     },
-    { connection: redisClient }
+    { connection: redisClient, concurrency }
   );
 
-  const fetch = async (name: Name, data: Input) => {
+  const fetch = async <N extends Name>(name: N, data: Inputs[N]) => {
     const id = getId(name, data);
     let listener: ((args: WrappedOutput) => void) | undefined;
 

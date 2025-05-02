@@ -10,47 +10,120 @@ import {
 import { uniqBy } from 'lodash';
 import memoizee from 'memoizee';
 
-import { EnvVars } from '../config';
+import { ALCHEMY_CONCURRENCY, ALCHEMY_CUPS, EnvVars } from '../config';
 import { CodedError } from '../utils/errors';
 import { createQueuedFetchJobs } from '../utils/queued-fetch-jobs';
 
 const ETH_TOKEN_SLUG = 'eth' as const;
 const TR_PSEUDO_LIMIT = 50;
 
-type AlchemyQueueJobName = 'transactions';
-interface AlchemyQueueJobData {
-  chainId: number;
-  accAddress: string;
-  contractAddress?: string;
-  olderThanBlockHeight?: `${number}`;
+type AlchemyQueueJobName = 'assetTransfers' | 'approvals';
+interface AlchemyQueueJobsInputs {
+  assetTransfers: {
+    chainId: number;
+    accAddress: string;
+    contractAddress: string | undefined;
+    toAcc: boolean;
+    toBlock: string | undefined;
+  };
+  approvals: {
+    chainId: number;
+    accAddress: string;
+    contractAddress: string | undefined;
+    toBlock: string;
+    fromBlock: string;
+  };
 }
 
-const { fetch, queue } = createQueuedFetchJobs<AlchemyQueueJobName, AlchemyQueueJobData, string>(
-  'alchemy-requests',
-  (name, { chainId, accAddress, contractAddress, olderThanBlockHeight }) =>
-    `${name}:${chainId}:${accAddress.toLowerCase()}:${contractAddress?.toLowerCase()}:${olderThanBlockHeight}`,
-  async (_name, { chainId, accAddress, contractAddress, olderThanBlockHeight }) => {
-    const alchemy = getAlchemyClient(chainId);
+type JobArgs<T extends AlchemyQueueJobName> = [name: T, data: AlchemyQueueJobsInputs[T]];
+function getAlchemyJobId(...args: JobArgs<'assetTransfers'>): string;
+function getAlchemyJobId(...args: JobArgs<'approvals'>): string;
+function getAlchemyJobId(...args: JobArgs<'assetTransfers'> | JobArgs<'approvals'>): string {
+  const [name, data] = args;
 
-    const transfers = await fetchTransfers(alchemy, accAddress, contractAddress, olderThanBlockHeight);
+  if (name === 'assetTransfers') {
+    const { chainId, accAddress, contractAddress, toAcc, toBlock } = data;
 
-    const approvals =
-      !transfers.length || contractAddress === ETH_TOKEN_SLUG
-        ? []
-        : await fetchApprovals(
-            alchemy,
-            accAddress,
-            contractAddress,
-            transfers.at(0)!.blockNum,
-            // Loading approvals withing the gap of received transfers.
-            // TODO: Mind the case of reaching response items number limit & not reaching block range.
-            transfers.at(-1)!.blockNum
-          );
+    return `${name}:${chainId}:${accAddress.toLowerCase()}:${contractAddress?.toLowerCase()}:${toAcc}:${toBlock}`;
+  }
 
-    return JSON.stringify({ transfers, approvals });
-  },
-  5
-);
+  const { chainId, accAddress, contractAddress, toBlock, fromBlock } = data;
+
+  return `${name}:${chainId}:${accAddress.toLowerCase()}:${contractAddress?.toLowerCase()}:${toBlock}:${fromBlock}`;
+}
+
+function getAlchemyResponse(...args: JobArgs<'assetTransfers'>): Promise<string>;
+function getAlchemyResponse(...args: JobArgs<'approvals'>): Promise<string>;
+function getAlchemyResponse(...args: JobArgs<'assetTransfers'> | JobArgs<'approvals'>): Promise<string> {
+  const [name, data] = args;
+  const alchemy = getAlchemyClient(data.chainId);
+  let responsePromise: Promise<unknown>;
+
+  if (name === 'assetTransfers') {
+    const { accAddress, toAcc, toBlock } = data;
+    let { contractAddress } = data;
+    const categories = new Set(
+      contractAddress === ETH_TOKEN_SLUG
+        ? GAS_CATEGORIES
+        : contractAddress
+          ? ASSET_CATEGORIES // (!) Won't have gas transfer operations in batches this way; no other way found
+          : Object.values(AssetTransfersCategory)
+    );
+
+    if (EXCLUDED_INTERNAL_CATEGORY.has(alchemy.config.network)) categories.delete(AssetTransfersCategory.INTERNAL);
+
+    if (contractAddress === ETH_TOKEN_SLUG) contractAddress = undefined;
+
+    const reqOptions: AssetTransfersWithMetadataParams = {
+      contractAddresses: contractAddress ? [contractAddress] : undefined,
+      order: SortingOrder.DESCENDING,
+      category: Array.from(categories),
+      excludeZeroValue: true,
+      withMetadata: true,
+      toBlock,
+      maxCount: TR_PSEUDO_LIMIT
+    };
+
+    if (toAcc) reqOptions.toAddress = accAddress;
+    else reqOptions.fromAddress = accAddress;
+
+    // Alchemy SDK processes Error 429 itself. See: https://docs.alchemy.com/reference/throughput#option-1-alchemy-sdk
+    responsePromise = alchemy.core.getAssetTransfers(reqOptions).then(r => r.transfers);
+  } else {
+    const { accAddress, contractAddress, toBlock, fromBlock } = data;
+
+    responsePromise = alchemy.core
+      .getLogs({
+        address: contractAddress,
+        topics: [
+          [
+            '0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925', // Approval
+            '0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31' // ApprovalForAll
+          ],
+          `0x${accAddress.slice(2).padStart(64, '0')}`
+        ],
+        toBlock,
+        fromBlock
+      })
+      .catch(e => {
+        if (e?.error?.code === -32602) return [];
+
+        throw e;
+      });
+  }
+
+  return responsePromise.then(JSON.stringify);
+}
+
+const { fetch, queue } = createQueuedFetchJobs<AlchemyQueueJobName, AlchemyQueueJobsInputs, string>({
+  queueName: 'alchemy-requests',
+  costs: { assetTransfers: 120, approvals: 60 },
+  limitDuration: 1000,
+  limitAmount: ALCHEMY_CUPS,
+  concurrency: ALCHEMY_CONCURRENCY,
+  getId: getAlchemyJobId,
+  getOutput: getAlchemyResponse
+});
 
 export const alchemyRequestsQueue = queue;
 
@@ -60,18 +133,28 @@ export async function fetchTransactions(
   contractAddress?: string,
   olderThanBlockHeight?: `${number}`
 ): Promise<{ transfers: AssetTransfersWithMetadataResult[]; approvals: Log[] }> {
-  return JSON.parse(
-    await fetch('transactions', {
-      chainId,
-      accAddress,
-      contractAddress,
-      olderThanBlockHeight
-    })
-  );
+  const transfers = await fetchTransfers(chainId, accAddress, contractAddress, olderThanBlockHeight);
+
+  const approvals =
+    !transfers.length || contractAddress === ETH_TOKEN_SLUG
+      ? []
+      : JSON.parse(
+          await fetch('approvals', {
+            chainId,
+            accAddress,
+            contractAddress,
+            toBlock: transfers.at(0)!.blockNum,
+            // Loading approvals withing the gap of received transfers.
+            // TODO: Mind the case of reaching response items number limit & not reaching block range.
+            fromBlock: transfers.at(-1)!.blockNum
+          })
+        );
+
+  return { transfers, approvals };
 }
 
 async function fetchTransfers(
-  alchemy: Alchemy,
+  chainId: number,
   accAddress: string,
   /** Without token ID means ERC-20 tokens only */
   contractAddress?: string,
@@ -79,12 +162,24 @@ async function fetchTransfers(
 ): Promise<AssetTransfersWithMetadataResult[]> {
   const toBlock = olderThanBlockToToBlockValue(olderThanBlockHeight);
 
-  const [transfersFrom, transfersTo] = await Promise.all([
-    _fetchTransfers(alchemy, accAddress, contractAddress, false, toBlock),
-    _fetchTransfers(alchemy, accAddress, contractAddress, true, toBlock)
+  const [rawTransfersFrom, rawTransfersTo] = await Promise.all([
+    fetch('assetTransfers', {
+      chainId,
+      accAddress,
+      contractAddress,
+      toAcc: false,
+      toBlock
+    }),
+    fetch('assetTransfers', {
+      chainId,
+      accAddress,
+      contractAddress,
+      toAcc: true,
+      toBlock
+    })
   ]);
 
-  const allTransfers = mergeFetchedTransfers(transfersFrom, transfersTo);
+  const allTransfers = mergeFetchedTransfers(JSON.parse(rawTransfersFrom), JSON.parse(rawTransfersTo));
 
   if (!allTransfers.length) return [];
 
@@ -154,42 +249,6 @@ function cutOffTrailingSameHashes(transfers: AssetTransfersWithMetadataResult[])
   return transfers.slice(0, -sameTrailingHashes);
 }
 
-async function _fetchTransfers(
-  alchemy: Alchemy,
-  accAddress: string,
-  contractAddress: string | undefined,
-  toAcc: boolean,
-  toBlock: string | undefined
-) {
-  const categories = new Set(
-    contractAddress === ETH_TOKEN_SLUG
-      ? GAS_CATEGORIES
-      : contractAddress
-        ? ASSET_CATEGORIES // (!) Won't have gas transfer operations in batches this way; no other way found
-        : Object.values(AssetTransfersCategory)
-  );
-
-  if (EXCLUDED_INTERNAL_CATEGORY.has(alchemy.config.network)) categories.delete(AssetTransfersCategory.INTERNAL);
-
-  if (contractAddress === ETH_TOKEN_SLUG) contractAddress = undefined;
-
-  const reqOptions: AssetTransfersWithMetadataParams = {
-    contractAddresses: contractAddress ? [contractAddress] : undefined,
-    order: SortingOrder.DESCENDING,
-    category: Array.from(categories),
-    excludeZeroValue: true,
-    withMetadata: true,
-    toBlock,
-    maxCount: TR_PSEUDO_LIMIT
-  };
-
-  if (toAcc) reqOptions.toAddress = accAddress;
-  else reqOptions.fromAddress = accAddress;
-
-  // Alchemy SDK processes Error 429 itself. See: https://docs.alchemy.com/reference/throughput#option-1-alchemy-sdk
-  return alchemy.core.getAssetTransfers(reqOptions).then(r => r.transfers);
-}
-
 function calcSameTrailingHashes(transfers: AssetTransfersWithMetadataResult[]) {
   if (!transfers.length) return 0;
 
@@ -211,36 +270,6 @@ function sortPredicate(
   if (aTs > bTs) return -1;
 
   return 0;
-}
-
-async function fetchApprovals(
-  alchemy: Alchemy,
-  accAddress: string,
-  contractAddress: string | undefined,
-  /** Hex string. Including said block. */
-  toBlock: string,
-  /** Hex string. Including said block. */
-  fromBlock: string
-) {
-  try {
-    return await alchemy.core.getLogs({
-      address: contractAddress,
-      topics: [
-        [
-          '0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925', // Approval
-          '0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31' // ApprovalForAll
-        ],
-        `0x${accAddress.slice(2).padStart(64, '0')}`
-      ],
-      toBlock,
-      fromBlock
-    });
-  } catch (error: any) {
-    // For 'query exceeds max block range ...' // Range may differ for different chains
-    if (error?.error?.code === -32602) return [];
-
-    throw error;
-  }
 }
 
 function olderThanBlockToToBlockValue(olderThanBlockHeight: `${number}` | undefined) {
@@ -356,7 +385,7 @@ const getAlchemyClient = memoizee(
     return new Alchemy({
       apiKey: EnvVars.ALCHEMY_API_KEY,
       network,
-      maxRetries: 50
+      maxRetries: 0
     });
   },
   { max: Object.keys(Network).length }
