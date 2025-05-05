@@ -18,18 +18,18 @@ const ETH_TOKEN_SLUG = 'eth' as const;
 const TR_PSEUDO_LIMIT = 50;
 
 type AlchemyQueueJobName = 'assetTransfers' | 'approvals';
-interface AlchemyQueueJobsInputs {
+export interface AlchemyQueueJobsInputs {
   assetTransfers: {
     chainId: number;
     accAddress: string;
-    contractAddress: string | undefined;
+    contractAddress?: string;
     toAcc: boolean;
-    toBlock: string | undefined;
+    toBlock?: string;
   };
   approvals: {
     chainId: number;
     accAddress: string;
-    contractAddress: string | undefined;
+    contractAddress?: string;
     toBlock: string;
     fromBlock: string;
   };
@@ -115,9 +115,11 @@ function getAlchemyResponse(...args: JobArgs<'assetTransfers'> | JobArgs<'approv
   return responsePromise.then(JSON.stringify);
 }
 
-const { fetch, queue } = createQueuedFetchJobs<AlchemyQueueJobName, AlchemyQueueJobsInputs, string>({
+export const alchemyRequestsCosts = { assetTransfers: 120, approvals: 60 };
+
+const { fetch, queue, queueEvents } = createQueuedFetchJobs<AlchemyQueueJobName, AlchemyQueueJobsInputs, string>({
   queueName: 'alchemy-requests',
-  costs: { assetTransfers: 120, approvals: 60 },
+  costs: alchemyRequestsCosts,
   limitDuration: 1000,
   limitAmount: ALCHEMY_CUPS,
   concurrency: ALCHEMY_CONCURRENCY,
@@ -126,6 +128,7 @@ const { fetch, queue } = createQueuedFetchJobs<AlchemyQueueJobName, AlchemyQueue
 });
 
 export const alchemyRequestsQueue = queue;
+export const alchemyRequestsQueueEvents = queueEvents;
 
 export async function fetchTransactions(
   chainId: number,
@@ -167,15 +170,15 @@ async function fetchTransfers(
       chainId,
       accAddress,
       contractAddress,
-      toAcc: false,
-      toBlock
+      toBlock,
+      toAcc: false
     }),
     fetch('assetTransfers', {
       chainId,
       accAddress,
       contractAddress,
-      toAcc: true,
-      toBlock
+      toBlock,
+      toAcc: true
     })
   ]);
 

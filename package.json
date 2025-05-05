@@ -14,13 +14,16 @@
     "lint:fix": "eslint ./src --ext .js,.ts --fix",
     "lint:rules": "eslint --print-config",
     "clean": "rimraf dist/",
-    "find-deadcode": "ts-prune --error"
+    "find-deadcode": "ts-prune --error",
+    "test": "mocha --require ts-node/register --require 'src/fixtures.ts' 'src/**/*.spec.ts' --jobs 1 --exit"
   },
   "dependencies": {
     "@bull-board/express": "^6.9.2",
     "@covalenthq/client-sdk": "^2.2.5",
     "@ethersproject/address": "^5.8.0",
+    "@types/lodash": "^4.17.16",
     "alchemy-sdk": "^3.5.8",
+    "assert": "^2.1.0",
     "async-retry": "^1.3.3",
     "body-parser": "^2.2.0",
     "bullmq": "^5.52.0",
@@ -43,6 +46,7 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.1",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^22.15.3",
     "@types/passport": "^1.0.17",
     "@types/passport-local": "^1.0.38",
@@ -53,6 +57,7 @@
     "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-no-type-assertion": "^1.3.0",
     "eslint-plugin-prettier": "^5.2.6",
+    "mocha": "^11.2.2",
     "prettier": "^3.5.3",
     "rimraf": "^6.0.1",
     "ts-node-dev": "^2.0.0",

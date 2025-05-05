@@ -19,6 +19,7 @@ export const EnvVars = {
   ADMIN_PASSWORD: getEnv('ADMIN_PASSWORD')
 };
 
+export const PORT = getEnvNat('PORT', 3000);
 export const COVALENT_RPS = getEnvNat('COVALENT_RPS', 50);
 export const COVALENT_CONCURRENCY = getEnvNat('COVALENT_CONCURRENCY', 10);
 export const ALCHEMY_CUPS = getEnvNat('ALCHEMY_CUPS', 500);

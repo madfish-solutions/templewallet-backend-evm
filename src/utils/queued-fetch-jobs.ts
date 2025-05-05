@@ -67,6 +67,7 @@ export const createQueuedFetchJobs = <
     async job => {
       const { name, data } = job;
       const waitStartTs = Date.now();
+      await job.updateProgress('consumeRateLimit');
       await new Promise<void>((res, rej) => {
         const doConsumeAttempt = async () => {
           try {
@@ -85,6 +86,7 @@ export const createQueuedFetchJobs = <
         doConsumeAttempt();
       });
 
+      await job.updateProgress('getOutput');
       const output = await getOutput(name, data);
       await queueEventsProducer.publishEvent<{ eventName: string } & WrappedOutput>({
         eventName: getId(name, data),
@@ -114,5 +116,5 @@ export const createQueuedFetchJobs = <
     });
   };
 
-  return { fetch, queue, worker };
+  return { fetch, queue, worker, queueEvents };
 };
