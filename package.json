@@ -15,7 +15,7 @@
     "lint:rules": "eslint --print-config",
     "clean": "rimraf dist/",
     "find-deadcode": "ts-prune --error",
-    "test": "mocha --require ts-node/register --require 'src/fixtures.ts' 'src/**/*.spec.ts' --jobs 1 --exit"
+    "test": "NODE_ENV=test mocha --require ts-node/register --require 'src/fixtures.ts' 'src/**/*.spec.ts' --jobs 1 --exit"
   },
   "dependencies": {
     "@bull-board/express": "^6.9.2",
@@ -45,6 +45,7 @@
     "yup": "^1.6.1"
   },
   "devDependencies": {
+    "@types/async-retry": "^1.4.9",
     "@types/express": "^5.0.1",
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.15.3",

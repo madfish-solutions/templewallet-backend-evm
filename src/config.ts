@@ -24,6 +24,7 @@ export const COVALENT_RPS = getEnvNat('COVALENT_RPS', 50);
 export const COVALENT_CONCURRENCY = getEnvNat('COVALENT_CONCURRENCY', 10);
 export const ALCHEMY_CUPS = getEnvNat('ALCHEMY_CUPS', 500);
 export const ALCHEMY_CONCURRENCY = getEnvNat('ALCHEMY_CONCURRENCY');
+export const IS_TESTING = getEnv('NODE_ENV') === 'test';
 
 for (const name in EnvVars) {
   if (EnvVars[name] == null) throw new Error(`process.env.${name} is not set.`);

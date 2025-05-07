@@ -1,6 +1,7 @@
-import { Queue, QueueEvents, QueueEventsListener, QueueEventsProducer, UnrecoverableError, Worker } from 'bullmq';
+import { Job, Queue, QueueEvents, QueueEventsListener, QueueEventsProducer, UnrecoverableError, Worker } from 'bullmq';
 import { RateLimiterRedis, RateLimiterRes } from 'rate-limiter-flexible';
 
+import { IS_TESTING } from '../config';
 import { redisClient } from '../redis';
 
 interface QueuedFetchJobsConfig<
@@ -67,7 +68,9 @@ export const createQueuedFetchJobs = <
     async job => {
       const { name, data } = job;
       const waitStartTs = Date.now();
-      await job.updateProgress('consumeRateLimit');
+      if (IS_TESTING) {
+        await job.updateProgress('consumeRateLimit');
+      }
       await new Promise<void>((res, rej) => {
         const doConsumeAttempt = async () => {
           try {
@@ -76,17 +79,17 @@ export const createQueuedFetchJobs = <
           } catch (e) {
             if (Date.now() - waitStartTs > timeout) {
               rej(new UnrecoverableError('Timed out'));
-            }
-
-            if (e instanceof RateLimiterRes) {
-              setTimeout(doConsumeAttempt, e.msBeforeNext || 100);
+            } else {
+              setTimeout(doConsumeAttempt, e instanceof RateLimiterRes ? e.msBeforeNext || 100 : 1000);
             }
           }
         };
         doConsumeAttempt();
       });
 
-      await job.updateProgress('getOutput');
+      if (IS_TESTING) {
+        await job.updateProgress('getOutput');
+      }
       const output = await getOutput(name, data);
       await queueEventsProducer.publishEvent<{ eventName: string } & WrappedOutput>({
         eventName: getId(name, data),
@@ -98,21 +101,20 @@ export const createQueuedFetchJobs = <
 
   const fetch = async <N extends Name>(name: N, data: Inputs[N]) => {
     const id = getId(name, data);
-    let listener: ((args: WrappedOutput) => void) | undefined;
+    let listener: (args: WrappedOutput) => void;
+    let job: Job | undefined;
+    let failedListener: QueueEventsListener['failed'];
 
-    return Promise.race([
-      new Promise<SuccessOutput>((resolve, reject) => {
-        listener = ({ output }: WrappedOutput) => resolve(output);
-        queueEvents.on<CustomListener>(id, listener);
-        queueEvents.on('failed', ({ jobId, failedReason }) => void (jobId === id && reject(new Error(failedReason))));
-        // @ts-expect-error
-        queue.add(name, data, { deduplication: { id } });
-      }),
-      new Promise<SuccessOutput>((_, reject) => setTimeout(() => reject(new Error('Timed out')), timeout))
-    ]).finally(() => {
-      if (listener) {
-        queueEvents.off<CustomListener>(id, listener);
-      }
+    return new Promise<SuccessOutput>(async (resolve, reject) => {
+      listener = ({ output }: WrappedOutput) => resolve(output);
+      failedListener = async ({ jobId, failedReason }) => void (jobId === job?.id && reject(new Error(failedReason)));
+      queueEvents.on<CustomListener>(id, listener);
+      queueEvents.on('failed', failedListener);
+      // @ts-expect-error
+      job = await queue.add(name, data, { deduplication: { id } });
+    }).finally(() => {
+      queueEvents.off<CustomListener>(id, listener);
+      queueEvents.off('failed', failedListener);
     });
   };
 
