@@ -4,6 +4,8 @@ import { RateLimiterRedis, RateLimiterRes } from 'rate-limiter-flexible';
 import { IS_TESTING } from '../config';
 import { redisClient } from '../redis';
 
+import { CodedError } from './errors';
+
 interface QueuedFetchJobsConfig<
   Name extends string,
   Inputs extends Record<Name, unknown>,
@@ -90,11 +92,24 @@ export const createQueuedFetchJobs = <
       if (IS_TESTING) {
         await job.updateProgress('getOutput');
       }
-      const output = await getOutput(name, data);
-      await queueEventsProducer.publishEvent<{ eventName: string } & WrappedOutput>({
-        eventName: getId(name, data),
-        output
-      });
+
+      try {
+        const output = await getOutput(name, data);
+        await queueEventsProducer.publishEvent<{ eventName: string } & WrappedOutput>({
+          eventName: getId(name, data),
+          output
+        });
+      } catch (e) {
+        if (e instanceof CodedError && e.code >= 400 && e.code < 500 && e.code !== 429) {
+          throw new UnrecoverableError(JSON.stringify({ code: e.code, message: e.message }));
+        }
+
+        if (e instanceof CodedError) {
+          throw new Error(JSON.stringify({ code: e.code, message: e.message }));
+        }
+
+        throw e;
+      }
     },
     { connection: redisClient, concurrency }
   );
@@ -112,10 +127,23 @@ export const createQueuedFetchJobs = <
       queueEvents.on('failed', failedListener);
       // @ts-expect-error
       job = await queue.add(name, data, { deduplication: { id } });
-    }).finally(() => {
-      queueEvents.off<CustomListener>(id, listener);
-      queueEvents.off('failed', failedListener);
-    });
+    })
+      .catch(e => {
+        if (e instanceof Error) {
+          try {
+            const parsedMessage = JSON.parse(e.message);
+            if (parsedMessage.code && parsedMessage.message) {
+              throw new CodedError(parsedMessage.code, parsedMessage.message);
+            }
+          } catch {}
+        }
+
+        throw e;
+      })
+      .finally(() => {
+        queueEvents.off<CustomListener>(id, listener);
+        queueEvents.off('failed', failedListener);
+      });
   };
 
   return { fetch, queue, worker, queueEvents };

@@ -61,10 +61,10 @@ async function getCovalentResponse(name: CovalentQueueJobName, { walletAddress, 
   }
 
   if (response.error) {
-    const code =
-      response.error_code && Number.isSafeInteger(Number(response.error_code)) ? Number(response.error_code) : 500;
+    const { error_code, error_message } = response;
+    const code = error_code && Number.isSafeInteger(Number(error_code)) ? Number(error_code) : 500;
 
-    throw new CodedError(code, response.error_message ?? 'Unknown error');
+    throw new CodedError(code, error_message ?? 'Unknown error');
   }
 
   return JSON.stringify(response.data, (_, value) => (typeof value === 'bigint' ? value.toString() : value));
@@ -72,10 +72,9 @@ async function getCovalentResponse(name: CovalentQueueJobName, { walletAddress, 
 
 export const COST_DECIMALS_MULTIPLIER = 10;
 /*
- * 1. The values are multiplied by `COST_DECIMALS_MULTIPLIER` to avoid errors in the rate limiter because of floating
+ * 1. The values are multiplied by `COST_DECIMALS_MULTIPLIER` to avoid errors in the rate limiter caused by floating
  *    point values.
- * 2. Actually, there is a limit of RPS but not of CUs for the API. CU is used just for convenience.
- * 3. The cost for `collectiblesMetadata` is bigger because two requests may be required if the list of supported chains
+ * 2. The cost for `collectiblesMetadata` is bigger because two requests may be required if the list of supported chains
  *    is changed.
  */
 export const covalentRequestsCosts = {
