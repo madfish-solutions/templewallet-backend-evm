@@ -17,6 +17,6 @@ export const evmQueryParamsTransactionsSchema = objectSchema().shape({
   chainId: naturalNumberSchema.clone().required('chainId is undefined'),
   walletAddress: addressSchema.clone().required('walletAddress is undefined'),
   /** Without token ID means ERC-20 tokens only */
-  contractAddress: addressSchema.clone(),
+  contractAddress: stringSchema().min(1),
   olderThanBlockHeight: naturalNumberSchema
 });
