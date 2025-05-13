@@ -7,7 +7,7 @@ import {
   AssetTransfersWithMetadataResult,
   Log
 } from 'alchemy-sdk';
-import { uniqBy } from 'lodash';
+import { range, uniqBy } from 'lodash';
 import memoizee from 'memoizee';
 
 import { ALCHEMY_CONCURRENCY, ALCHEMY_CUPS, EnvVars } from '../config';
@@ -51,6 +51,8 @@ function getAlchemyJobId(...args: JobArgs<'assetTransfers'> | JobArgs<'approvals
 
   return `${name}:${chainId}:${accAddress.toLowerCase()}:${contractAddress?.toLowerCase()}:${toBlock}:${fromBlock}`;
 }
+
+const BLOCK_RANGE_ERROR_REGEX = /You can make eth_getLogs requests with up to a (\d+) block range./;
 
 function getAlchemyResponse(...args: JobArgs<'assetTransfers'>): Promise<string>;
 function getAlchemyResponse(...args: JobArgs<'approvals'>): Promise<string>;
@@ -108,6 +110,10 @@ function getAlchemyResponse(...args: JobArgs<'assetTransfers'> | JobArgs<'approv
       .catch(e => {
         if (e?.error?.code === -32602) return [];
 
+        if (e?.message?.match(BLOCK_RANGE_ERROR_REGEX)) {
+          throw new CodedError(400, e.message);
+        }
+
         throw e;
       });
   }
@@ -138,20 +144,88 @@ export async function fetchTransactions(
 ): Promise<{ transfers: AssetTransfersWithMetadataResult[]; approvals: Log[] }> {
   const transfers = await fetchTransfers(chainId, accAddress, contractAddress, olderThanBlockHeight);
 
-  const approvals =
-    !transfers.length || contractAddress === ETH_TOKEN_SLUG
-      ? []
-      : JSON.parse(
-          await fetch('approvals', {
-            chainId,
-            accAddress,
-            contractAddress,
-            toBlock: transfers.at(0)!.blockNum,
-            // Loading approvals withing the gap of received transfers.
-            // TODO: Mind the case of reaching response items number limit & not reaching block range.
-            fromBlock: transfers.at(-1)!.blockNum
-          })
-        );
+  if (!transfers.length || contractAddress === ETH_TOKEN_SLUG) {
+    return { transfers, approvals: [] };
+  }
+
+  let approvals: Log[] = [];
+  const highestBlockNum = transfers.at(0)!.blockNum;
+  const lowestBlockNum = transfers.at(-1)!.blockNum;
+  try {
+    approvals = JSON.parse(
+      await fetch('approvals', {
+        chainId,
+        accAddress,
+        contractAddress,
+        toBlock: highestBlockNum,
+        fromBlock: lowestBlockNum
+      })
+    );
+  } catch (e: any) {
+    const blockErrorRangeMatch = e?.message?.match(BLOCK_RANGE_ERROR_REGEX);
+
+    if (!blockErrorRangeMatch) {
+      throw e;
+    }
+
+    const blockRange = parseInt(blockErrorRangeMatch[1], 10);
+    const parsedHighestBlockNum = Number(highestBlockNum);
+    const parsedLowestBlockNum = Number(lowestBlockNum);
+    const requestsCountForAllBlocks = Math.ceil((parsedHighestBlockNum - parsedLowestBlockNum + 1) / blockRange);
+    let blocksRanges: [number, number][];
+    if (requestsCountForAllBlocks <= transfers.length) {
+      blocksRanges = range(parsedLowestBlockNum, parsedHighestBlockNum + 1, blockRange).map(fromBlock => [
+        fromBlock,
+        fromBlock + blockRange - 1
+      ]);
+    } else {
+      blocksRanges = transfers
+        .map(({ blockNum }) => [
+          Math.max(Number(blockNum) - Math.floor(blockRange / 2) + 1, parsedLowestBlockNum),
+          Math.min(Number(blockNum) + Math.floor(blockRange / 2), parsedHighestBlockNum)
+        ])
+        .reduce<[number, number][]>((acc, [fromBlock, toBlock]) => {
+          // Merge intervals that are in start descending order
+          const last = acc.at(-1);
+          if (!last) {
+            acc.push([fromBlock, toBlock]);
+
+            return acc;
+          }
+
+          const [lastFromBlock, lastToBlock] = last;
+          const newToBlock = Math.min(lastFromBlock - 1, toBlock);
+
+          if (fromBlock > newToBlock) {
+            return acc;
+          }
+
+          if (lastFromBlock - newToBlock > 1 || lastToBlock - fromBlock + 1 > blockRange) {
+            acc.push([fromBlock, newToBlock]);
+          } else {
+            last[0] = fromBlock;
+          }
+
+          return acc;
+        }, [])
+        .reverse();
+    }
+    const approvalsChunks = await Promise.all(
+      blocksRanges.map(([fromBlock, toBlock]) =>
+        fetch('approvals', {
+          chainId,
+          accAddress,
+          contractAddress,
+          toBlock: `0x${toBlock.toString(16)}`,
+          fromBlock: `0x${fromBlock.toString(16)}`
+        })
+      )
+    );
+    approvals = uniqBy(
+      approvalsChunks.flatMap(approvalsChunk => JSON.parse(approvalsChunk)),
+      log => `${log.transactionHash}-${log.logIndex}`
+    );
+  }
 
   return { transfers, approvals };
 }
