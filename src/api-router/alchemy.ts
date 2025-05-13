@@ -4,9 +4,10 @@ import {
   Network,
   AssetTransfersWithMetadataParams,
   SortingOrder,
-  AssetTransfersWithMetadataResult
+  AssetTransfersWithMetadataResult,
+  Log
 } from 'alchemy-sdk';
-import { uniqBy } from 'lodash';
+import { uniqBy, range } from 'lodash';
 import memoizee from 'memoizee';
 
 import { EnvVars } from '../config';
@@ -14,6 +15,8 @@ import { CodedError } from '../utils/errors';
 
 const ETH_TOKEN_SLUG = 'eth' as const;
 const TR_PSEUDO_LIMIT = 50;
+
+const BLOCK_RANGE_ERROR_REGEX = /You can make eth_getLogs requests with up to a (\d+) block range./;
 
 export async function fetchTransactions(
   chainId: number,
@@ -25,18 +28,72 @@ export async function fetchTransactions(
 
   const transfers = await fetchTransfers(alchemy, accAddress, contractAddress, olderThanBlockHeight);
 
-  const approvals =
-    !transfers.length || contractAddress === ETH_TOKEN_SLUG
-      ? []
-      : await fetchApprovals(
-          alchemy,
-          accAddress,
-          contractAddress,
-          transfers.at(0)!.blockNum,
-          // Loading approvals withing the gap of received transfers.
-          // TODO: Mind the case of reaching response items number limit & not reaching block range.
-          transfers.at(-1)!.blockNum
-        );
+  if (!transfers.length || contractAddress === ETH_TOKEN_SLUG) {
+    return { transfers, approvals: [] };
+  }
+
+  let approvals: Log[] = [];
+  const highestBlockNum = transfers.at(0)!.blockNum;
+  const lowestBlockNum = transfers.at(-1)!.blockNum;
+
+  try {
+    approvals = await fetchApprovals(alchemy, accAddress, contractAddress, highestBlockNum, lowestBlockNum);
+  } catch (e: any) {
+    const blockErrorRangeMatch = e?.message?.match(BLOCK_RANGE_ERROR_REGEX);
+
+    if (!blockErrorRangeMatch) {
+      throw e;
+    }
+
+    const blockRange = parseInt(blockErrorRangeMatch[1], 10);
+    const parsedHighestBlockNum = Number(highestBlockNum);
+    const parsedLowestBlockNum = Number(lowestBlockNum);
+    const requestsCountForAllBlocks = Math.ceil((parsedHighestBlockNum - parsedLowestBlockNum + 1) / blockRange);
+    let blocksRanges: [number, number][];
+    if (requestsCountForAllBlocks <= transfers.length) {
+      blocksRanges = range(parsedLowestBlockNum, parsedHighestBlockNum + 1, blockRange).map(fromBlock => [
+        fromBlock,
+        fromBlock + blockRange - 1
+      ]);
+    } else {
+      blocksRanges = transfers
+        .map(({ blockNum }) => [
+          Math.max(Number(blockNum) - Math.floor(blockRange / 2) + 1, parsedLowestBlockNum),
+          Math.min(Number(blockNum) + Math.floor(blockRange / 2), parsedHighestBlockNum)
+        ])
+        .reduce<[number, number][]>((acc, [fromBlock, toBlock]) => {
+          // Merge intervals that are in start descending order
+          const last = acc.at(-1);
+          if (!last) {
+            acc.push([fromBlock, toBlock]);
+
+            return acc;
+          }
+
+          const [lastFromBlock, lastToBlock] = last;
+          const newToBlock = Math.min(lastFromBlock - 1, toBlock);
+
+          if (fromBlock > newToBlock) {
+            return acc;
+          }
+
+          if (lastFromBlock - newToBlock > 1 || lastToBlock - fromBlock + 1 > blockRange) {
+            acc.push([fromBlock, newToBlock]);
+          } else {
+            last[0] = fromBlock;
+          }
+
+          return acc;
+        }, [])
+        .reverse();
+    }
+    const approvalsChunks = await Promise.all(
+      blocksRanges.map(([fromBlock, toBlock]) =>
+        fetchApprovals(alchemy, accAddress, contractAddress, `0x${toBlock.toString(16)}`, `0x${fromBlock.toString(16)}`)
+      )
+    );
+    approvals = uniqBy(approvalsChunks.flat(), log => `${log.transactionHash}-${log.logIndex}`);
+  }
 
   return { transfers, approvals };
 }
