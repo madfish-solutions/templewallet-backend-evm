@@ -7,13 +7,13 @@ import { createQueuedFetchJobs } from '../utils/queued-fetch-jobs';
 const client = new GoldRushClient(EnvVars.COVALENT_API_KEY, { enableRetry: false, threadCount: COVALENT_CONCURRENCY });
 
 export type CovalentQueueJobName = 'balances' | 'tokensMetadata' | 'collectiblesMetadata';
-interface CovalentQueueJobData {
+export interface CovalentQueueJobData {
   walletAddress: string;
   chainId: number;
 }
 type CovalentQueueJobsInputs = Record<CovalentQueueJobName, CovalentQueueJobData>;
 
-function getCovalentJobId(name: CovalentQueueJobName, { walletAddress, chainId }: CovalentQueueJobData) {
+function getCovalentJobDeduplicationId(name: CovalentQueueJobName, { walletAddress, chainId }: CovalentQueueJobData) {
   return `${name}:${walletAddress.toLowerCase()}:${chainId}`;
 }
 
@@ -88,7 +88,7 @@ const { fetch, queue, queueEvents } = createQueuedFetchJobs<CovalentQueueJobName
   limitDuration: 1000,
   limitAmount: COVALENT_RPS * COST_DECIMALS_MULTIPLIER,
   concurrency: COVALENT_CONCURRENCY,
-  getId: getCovalentJobId,
+  getDeduplicationId: getCovalentJobDeduplicationId,
   getOutput: getCovalentResponse
 });
 

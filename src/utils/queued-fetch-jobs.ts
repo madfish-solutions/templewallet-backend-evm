@@ -17,7 +17,7 @@ interface QueuedFetchJobsConfig<
   limitDuration: number;
   limitAmount: number;
   timeout?: number;
-  getId: <N extends Name>(name: N, data: Inputs[N]) => string;
+  getDeduplicationId: <N extends Name>(name: N, data: Inputs[N]) => string;
   getOutput: <N extends Name>(name: N, data: Inputs[N]) => Promise<SuccessOutput>;
 }
 
@@ -32,7 +32,7 @@ export const createQueuedFetchJobs = <
   concurrency = Math.floor(limitAmount / Math.min(...Object.values<number>(costs))),
   limitDuration,
   timeout = 30_000,
-  getId,
+  getDeduplicationId,
   getOutput
 }: QueuedFetchJobsConfig<Name, Inputs, SuccessOutput>) => {
   const rateLimiter = new RateLimiterRedis({
@@ -96,7 +96,7 @@ export const createQueuedFetchJobs = <
       try {
         const output = await getOutput(name, data);
         await queueEventsProducer.publishEvent<{ eventName: string } & WrappedOutput>({
-          eventName: getId(name, data),
+          eventName: getDeduplicationId(name, data),
           output
         });
       } catch (e) {
@@ -115,7 +115,7 @@ export const createQueuedFetchJobs = <
   );
 
   const fetch = async <N extends Name>(name: N, data: Inputs[N]) => {
-    const id = getId(name, data);
+    const id = getDeduplicationId(name, data);
     let listener: (args: WrappedOutput) => void;
     let job: Job | undefined;
     let failedListener: QueueEventsListener['failed'];

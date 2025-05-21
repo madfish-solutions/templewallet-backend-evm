@@ -3,6 +3,7 @@ import retry from 'async-retry';
 
 import {
   COST_DECIMALS_MULTIPLIER,
+  CovalentQueueJobData,
   CovalentQueueJobName,
   covalentRequestsCosts,
   covalentRequestsQueue,
@@ -14,9 +15,10 @@ import {
   api,
   assertConcurrency,
   assertPointsConsumption,
-  deepEqualWithoutUndefined,
+  deepEqualWithoutUndefinedProps,
   isBadRequestError,
-  makeAssertJobsFunction,
+  JobSnapshot,
+  makeCheckJobsFunction,
   TEST_ACCOUNT_ADDRESS,
   TEST_ACCOUNT_ADDRESS_UPPER,
   VITALIK_ADDRESS,
@@ -28,24 +30,33 @@ interface CovalentApiRequestParams {
   chainId: number | string;
 }
 
+type CovalentJobSnapshot = JobSnapshot<CovalentQueueJobName, CovalentQueueJobData>;
+
 const makeCovalentRequestFunction = (endpoint: string) => (params: CovalentApiRequestParams) =>
   api.get(endpoint, { params });
 
-const assertJobs = makeAssertJobsFunction(
+const sortPredicate = (
+  { name: aName, data: aData }: CovalentJobSnapshot,
+  { name: bName, data: bData }: CovalentJobSnapshot
+) => {
+  const { walletAddress: aWalletAddress, chainId: aChainId } = aData;
+  const { walletAddress: bWalletAddress, chainId: bChainId } = bData;
+
+  if (aWalletAddress !== bWalletAddress) {
+    return aWalletAddress.localeCompare(bWalletAddress);
+  }
+
+  if (aChainId !== bChainId) {
+    return aChainId - bChainId;
+  }
+
+  return aName.localeCompare(bName);
+};
+
+const assertJobs = makeCheckJobsFunction<CovalentQueueJobName, CovalentQueueJobData, [CovalentJobSnapshot[]]>(
   covalentRequestsQueue,
-  ({ name: aName, data: aData }, { name: bName, data: bData }) => {
-    const { walletAddress: aWalletAddress, chainId: aChainId } = aData;
-    const { walletAddress: bWalletAddress, chainId: bChainId } = bData;
-
-    if (aWalletAddress !== bWalletAddress) {
-      return aWalletAddress.localeCompare(bWalletAddress);
-    }
-
-    if (aChainId !== bChainId) {
-      return aChainId - bChainId;
-    }
-
-    return aName.localeCompare(bName);
+  (allJobs, expectedJobs) => {
+    deepEqualWithoutUndefinedProps(allJobs.toSorted(sortPredicate), expectedJobs.toSorted(sortPredicate));
   }
 );
 
@@ -90,7 +101,7 @@ describe('covalent', function () {
         ];
         const results = await Promise.all(requestsParams.map(makeRequest));
         for (let i = 0; i < results.length - 1; i++) {
-          deepEqualWithoutUndefined(results[i].data, results[i + 1].data);
+          deepEqualWithoutUndefinedProps(results[i].data, results[i + 1].data);
         }
         await assertJobs(makeExpectedCompletedJobs(requestsParams[0], jobName));
       });
@@ -118,7 +129,7 @@ describe('covalent', function () {
     makeSingleEntrypointTests(path, jobName);
   });
 
-  it('should respect the limits for CUs per second and concurrency', async function () {
+  it('should respect the limits for requests per second and concurrency', async function () {
     this.timeout(5 * 60 * 1000);
     await new Promise(resolve => setTimeout(resolve, 1000));
     const EXT_DEFAULT_CHAINS_IDS = [1, 10, 56, 137, 8453, 42161, 43114, 11155111, 11155420, 97, 80002, 43113];

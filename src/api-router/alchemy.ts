@@ -7,7 +7,7 @@ import {
   AssetTransfersWithMetadataResult,
   Log
 } from 'alchemy-sdk';
-import { range, uniqBy } from 'lodash';
+import { range, uniqBy, uniqueId } from 'lodash';
 import memoizee from 'memoizee';
 
 import { ALCHEMY_CONCURRENCY, ALCHEMY_CUPS, EnvVars } from '../config';
@@ -17,9 +17,11 @@ import { createQueuedFetchJobs } from '../utils/queued-fetch-jobs';
 const ETH_TOKEN_SLUG = 'eth' as const;
 const TR_PSEUDO_LIMIT = 50;
 
-type AlchemyQueueJobName = 'assetTransfers' | 'approvals';
+export type AlchemyQueueJobName = 'assetTransfers' | 'approvals';
 export interface AlchemyQueueJobsInputs {
   assetTransfers: {
+    /** Only for testing and debugging */
+    txReqId: string;
     chainId: number;
     accAddress: string;
     contractAddress?: string;
@@ -27,6 +29,8 @@ export interface AlchemyQueueJobsInputs {
     toBlock?: string;
   };
   approvals: {
+    /** Only for testing and debugging */
+    txReqId: string;
     chainId: number;
     accAddress: string;
     contractAddress?: string;
@@ -35,10 +39,15 @@ export interface AlchemyQueueJobsInputs {
   };
 }
 
+export interface FetchTransactionsResponse {
+  transfers: AssetTransfersWithMetadataResult[];
+  approvals: Log[];
+}
+
 type JobArgs<T extends AlchemyQueueJobName> = [name: T, data: AlchemyQueueJobsInputs[T]];
-function getAlchemyJobId(...args: JobArgs<'assetTransfers'>): string;
-function getAlchemyJobId(...args: JobArgs<'approvals'>): string;
-function getAlchemyJobId(...args: JobArgs<'assetTransfers'> | JobArgs<'approvals'>): string {
+function getAlchemyJobDeduplicationId(...args: JobArgs<'assetTransfers'>): string;
+function getAlchemyJobDeduplicationId(...args: JobArgs<'approvals'>): string;
+function getAlchemyJobDeduplicationId(...args: JobArgs<'assetTransfers'> | JobArgs<'approvals'>): string {
   const [name, data] = args;
 
   if (name === 'assetTransfers') {
@@ -129,7 +138,7 @@ const { fetch, queue, queueEvents } = createQueuedFetchJobs<AlchemyQueueJobName,
   limitDuration: 1000,
   limitAmount: ALCHEMY_CUPS,
   concurrency: ALCHEMY_CONCURRENCY,
-  getId: getAlchemyJobId,
+  getDeduplicationId: getAlchemyJobDeduplicationId,
   getOutput: getAlchemyResponse
 });
 
@@ -141,8 +150,9 @@ export async function fetchTransactions(
   accAddress: string,
   contractAddress?: string,
   olderThanBlockHeight?: `${number}`
-): Promise<{ transfers: AssetTransfersWithMetadataResult[]; approvals: Log[] }> {
-  const transfers = await fetchTransfers(chainId, accAddress, contractAddress, olderThanBlockHeight);
+): Promise<FetchTransactionsResponse> {
+  const txReqId = uniqueId('txReqId-');
+  const transfers = await fetchTransfers(txReqId, chainId, accAddress, contractAddress, olderThanBlockHeight);
 
   if (!transfers.length || contractAddress === ETH_TOKEN_SLUG) {
     return { transfers, approvals: [] };
@@ -154,6 +164,7 @@ export async function fetchTransactions(
   try {
     approvals = JSON.parse(
       await fetch('approvals', {
+        txReqId,
         chainId,
         accAddress,
         contractAddress,
@@ -213,6 +224,7 @@ export async function fetchTransactions(
     const approvalsChunks = await Promise.all(
       blocksRanges.map(([fromBlock, toBlock]) =>
         fetch('approvals', {
+          txReqId,
           chainId,
           accAddress,
           contractAddress,
@@ -231,6 +243,7 @@ export async function fetchTransactions(
 }
 
 async function fetchTransfers(
+  txReqId: string,
   chainId: number,
   accAddress: string,
   /** Without token ID means ERC-20 tokens only */
@@ -238,22 +251,11 @@ async function fetchTransfers(
   olderThanBlockHeight?: `${number}`
 ): Promise<AssetTransfersWithMetadataResult[]> {
   const toBlock = olderThanBlockToToBlockValue(olderThanBlockHeight);
+  const transfersRequestBase = { chainId, accAddress, contractAddress, toBlock, txReqId };
 
   const [rawTransfersFrom, rawTransfersTo] = await Promise.all([
-    fetch('assetTransfers', {
-      chainId,
-      accAddress,
-      contractAddress,
-      toBlock,
-      toAcc: false
-    }),
-    fetch('assetTransfers', {
-      chainId,
-      accAddress,
-      contractAddress,
-      toBlock,
-      toAcc: true
-    })
+    fetch('assetTransfers', { ...transfersRequestBase, toAcc: false }),
+    fetch('assetTransfers', { ...transfersRequestBase, toAcc: true })
   ]);
 
   const allTransfers = mergeFetchedTransfers(JSON.parse(rawTransfersFrom), JSON.parse(rawTransfersTo));

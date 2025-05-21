@@ -22,9 +22,20 @@ const objectWithoutUndefined = <T extends object>(obj: T) => {
       })
   ) as T;
 };
-export const deepEqualWithoutUndefined = <T extends object>(a: T, b: T) => {
-  deepStrictEqual(objectWithoutUndefined(a), objectWithoutUndefined(b));
+const toWithoutUndefinedPropsValue = <T>(value: T): T => {
+  if (Array.isArray(value)) {
+    return value.map(toWithoutUndefinedPropsValue) as T;
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    return objectWithoutUndefined(value);
+  }
+
+  return value;
 };
+
+export const deepEqualWithoutUndefinedProps = <T extends object>(actual: T, expected: T, message?: string) =>
+  deepStrictEqual(toWithoutUndefinedPropsValue(actual), toWithoutUndefinedPropsValue(expected), message);
 
 const getJobsSnapshot = async <Name extends string, Data>(queue: Queue<Data, void, Name>) => {
   const allJobs = await queue.getJobs();
@@ -44,16 +55,13 @@ export interface JobSnapshot<Name extends string, Data> {
   state: JobState | 'unknown';
 }
 
-export const makeAssertJobsFunction =
-  <Name extends string, Data>(
+export const makeCheckJobsFunction =
+  <Name extends string, Data, T extends unknown[]>(
     queue: Queue<Data, void, Name>,
-    sortPredicate: (a: JobSnapshot<Name, Data>, b: JobSnapshot<Name, Data>) => number
+    checkFn: (allJobs: JobSnapshot<Name, Data>[], ...args: T) => void
   ) =>
-  async (expectedJobs: JobSnapshot<Name, Data>[]) =>
-    deepEqualWithoutUndefined(
-      (await getJobsSnapshot(queue)).toSorted(sortPredicate),
-      expectedJobs.toSorted(sortPredicate)
-    );
+  async (...args: T) =>
+    checkFn(await getJobsSnapshot(queue), ...args);
 
 export const withQueueEventsListening = async <T, N extends string>(
   queueEvents: QueueEvents,
