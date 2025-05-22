@@ -16,6 +16,7 @@ import { createQueuedFetchJobs } from '../utils/queued-fetch-jobs';
 
 const ETH_TOKEN_SLUG = 'eth' as const;
 const TR_PSEUDO_LIMIT = 50;
+const APPROVALS_REQUESTS_LIMIT_PER_TXS_REQUEST = 3;
 
 export type AlchemyQueueJobName = 'assetTransfers' | 'approvals';
 export interface AlchemyQueueJobsInputs {
@@ -184,13 +185,21 @@ export async function fetchTransactions(
     const parsedLowestBlockNum = Number(lowestBlockNum);
     const requestsCountForAllBlocks = Math.ceil((parsedHighestBlockNum - parsedLowestBlockNum + 1) / blockRange);
     let blocksRanges: [number, number][];
-    if (requestsCountForAllBlocks <= transfers.length) {
+    const approvalRequiringTransfers = transfers
+      .filter(
+        ({ from, category }) =>
+          from.toLowerCase() === accAddress.toLowerCase() &&
+          category !== AssetTransfersCategory.EXTERNAL &&
+          category !== AssetTransfersCategory.INTERNAL
+      )
+      .slice(0, APPROVALS_REQUESTS_LIMIT_PER_TXS_REQUEST);
+    if (requestsCountForAllBlocks <= approvalRequiringTransfers.length) {
       blocksRanges = range(parsedLowestBlockNum, parsedHighestBlockNum + 1, blockRange).map(fromBlock => [
         fromBlock,
         fromBlock + blockRange - 1
       ]);
     } else {
-      blocksRanges = transfers
+      blocksRanges = approvalRequiringTransfers
         .map(({ blockNum }) => [
           Math.max(Number(blockNum) - Math.floor(blockRange / 2) + 1, parsedLowestBlockNum),
           Math.min(Number(blockNum) + Math.floor(blockRange / 2), parsedHighestBlockNum)
