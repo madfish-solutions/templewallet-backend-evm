@@ -185,21 +185,18 @@ export async function fetchTransactions(
     const parsedLowestBlockNum = Number(lowestBlockNum);
     const requestsCountForAllBlocks = Math.ceil((parsedHighestBlockNum - parsedLowestBlockNum + 1) / blockRange);
     let blocksRanges: [number, number][];
-    const approvalRequiringTransfers = transfers
+    const sendTokenTransfers = transfers
       .filter(
-        ({ from, category }) =>
-          from.toLowerCase() === accAddress.toLowerCase() &&
-          category !== AssetTransfersCategory.EXTERNAL &&
-          category !== AssetTransfersCategory.INTERNAL
+        ({ from, category }) => from.toLowerCase() === accAddress.toLowerCase() && !GAS_CATEGORIES.includes(category)
       )
       .slice(0, APPROVALS_REQUESTS_LIMIT_PER_TXS_REQUEST);
-    if (requestsCountForAllBlocks <= approvalRequiringTransfers.length) {
+    if (requestsCountForAllBlocks <= sendTokenTransfers.length) {
       blocksRanges = range(parsedLowestBlockNum, parsedHighestBlockNum + 1, blockRange).map(fromBlock => [
         fromBlock,
         fromBlock + blockRange - 1
       ]);
     } else {
-      blocksRanges = approvalRequiringTransfers
+      blocksRanges = sendTokenTransfers
         .map(({ blockNum }) => [
           Math.max(Number(blockNum) - Math.floor(blockRange / 2) + 1, parsedLowestBlockNum),
           Math.min(Number(blockNum) + Math.floor(blockRange / 2), parsedHighestBlockNum)

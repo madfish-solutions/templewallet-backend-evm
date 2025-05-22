@@ -1,3 +1,4 @@
+import { AssetTransfersCategory, AssetTransfersWithMetadataResult } from 'alchemy-sdk';
 import assert, { equal, rejects } from 'assert';
 import { AxiosResponse } from 'axios';
 import { groupBy } from 'lodash';
@@ -96,6 +97,11 @@ interface RequestResponseEntry {
   res: AxiosResponse<FetchTransactionsResponse>;
 }
 
+const isSendTokensTransfer = (transfer: AssetTransfersWithMetadataResult, accAddress: string) =>
+  transfer.from.toLowerCase() === accAddress.toLowerCase() &&
+  transfer.category !== AssetTransfersCategory.EXTERNAL &&
+  transfer.category !== AssetTransfersCategory.INTERNAL;
+
 const checkJobs = makeCheckJobsFunction<
   AlchemyQueueJobName,
   ApprovalsJobInput | AssetTransfersJobInput,
@@ -166,20 +172,35 @@ const checkJobs = makeCheckJobsFunction<
         return completedApprovalsJobs.length === 0;
       }
 
-      if (completedApprovalsJobs.length === 0) {
-        return transfers.length === 0;
+      const firstBlockLevel = Number(transfers.at(-1)!.blockNum);
+      const lastBlockLevel = Number(transfers[0].blockNum);
+
+      if (completedApprovalsJobs.length === 1) {
+        const { fromBlock, toBlock } = completedApprovalsJobs[0].data;
+
+        if (Number(fromBlock) === firstBlockLevel && Number(toBlock) === lastBlockLevel) {
+          return true;
+        }
       }
 
-      return (
-        Number(transfers[0].blockNum) === Number(completedApprovalsJobs[0].data.toBlock) &&
-        Number(transfers.at(-1)!.blockNum) === Number(completedApprovalsJobs.at(-1)!.data.fromBlock)
-      );
+      const firstSendTokensTransfer = transfers.find(transfer => isSendTokensTransfer(transfer, accAddress));
+
+      if (!firstSendTokensTransfer) {
+        return completedApprovalsJobs.length === 0;
+      }
+
+      if (completedApprovalsJobs.length === 0) {
+        return !firstSendTokensTransfer;
+      }
+
+      return Number(firstSendTokensTransfer.blockNum) === Number(completedApprovalsJobs[0].data.toBlock);
     });
     assert(requestResponseEntryIndex >= 0, `Failed to find a request for jobs: ${JSON.stringify(allJobsInGroup)}`);
 
     const { res } = leftRequestResponseEntries[requestResponseEntryIndex];
     leftRequestResponseEntries.splice(requestResponseEntryIndex, 1);
     const { transfers } = res.data;
+
     if (transfers.length === 0) {
       deepEqualWithoutUndefinedProps(
         completedApprovalsJobs,
@@ -189,9 +210,33 @@ const checkJobs = makeCheckJobsFunction<
       continue;
     }
 
+    const firstBlockLevel = Number(transfers.at(-1)!.blockNum);
+    const lastBlockLevel = Number(transfers[0].blockNum);
+
+    if (completedApprovalsJobs.length === 1) {
+      const { fromBlock, toBlock } = completedApprovalsJobs[0].data;
+
+      if (Number(fromBlock) === firstBlockLevel && Number(toBlock) === lastBlockLevel) {
+        continue;
+      }
+    }
+
+    const sendTokensTransfers = transfers.filter(transfer => isSendTokensTransfer(transfer, accAddress)).slice(0, 3);
+    if (sendTokensTransfers.length === 0) {
+      deepEqualWithoutUndefinedProps(
+        completedApprovalsJobs,
+        [],
+        'There should be no approvals jobs for the transfers list without sending tokens'
+      );
+      continue;
+    }
+
     assert(completedApprovalsJobs.length > 0, 'There should be approvals jobs for transfers list');
-    assert(completedApprovalsJobs.length <= transfers.length, 'There should be no more approvals jobs than transfers');
-    transfers.forEach(transfer => {
+    assert(
+      completedApprovalsJobs.length <= sendTokensTransfers.length,
+      'There should be no more approvals jobs than transfers of sending tokens'
+    );
+    sendTokensTransfers.forEach(transfer => {
       assert(
         completedApprovalsJobs.some(
           ({ data }) =>
