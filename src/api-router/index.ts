@@ -1,10 +1,14 @@
 import { Router, Response } from 'express';
 
 import { withCodedExceptionHandler } from '../utils/express-helpers';
-import { evmQueryParamsSchema, evmQueryParamsTransactionsSchema } from '../utils/schemas';
+import {
+  evmMultichainQueryParamsSchema,
+  evmQueryParamsSchema,
+  evmQueryParamsTransactionsSchema
+} from '../utils/schemas';
 
 import { fetchTransactions } from './alchemy';
-import { getEvmBalances, getEvmCollectiblesMetadata, getEvmTokensMetadata } from './covalent';
+import { getEvmAccountActivity, getEvmBalances, getEvmCollectiblesMetadata, getEvmTokensMetadata } from './covalent';
 
 export const apiRouter = Router();
 
@@ -39,6 +43,14 @@ apiRouter
       const { walletAddress, chainId } = await evmQueryParamsSchema.validate(req.query);
 
       sendData(await getEvmCollectiblesMetadata(walletAddress, chainId), res);
+    })
+  )
+  .get(
+    '/is-initialized',
+    withCodedExceptionHandler(async (req, res) => {
+      const { walletAddress } = await evmMultichainQueryParamsSchema.validate(req.query);
+      const { items: activityItems } = await getEvmAccountActivity(walletAddress);
+      res.status(200).json({ isInitialized: (activityItems ?? []).length > 0 });
     })
   )
   .get(
