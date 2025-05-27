@@ -1,11 +1,12 @@
 import { convertQuoteToRoute, createConfig, getConnections, getQuote, getTokens } from '@lifi/sdk';
 import retry from 'async-retry';
 
+import { EnvVars } from '../config';
 import { CodedError } from '../utils/errors';
 
 createConfig({
   integrator: 'temple-wallet',
-  apiKey: '',
+  apiKey: EnvVars.LIFI_API_KEY,
   routeOptions: {
     fee: 0.0035, // 0.35% + 0.25% lifi = 0.6%
     maxPriceImpact: 0.01, // 1%
