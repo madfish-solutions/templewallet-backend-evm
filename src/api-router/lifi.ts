@@ -5,7 +5,7 @@ import { EnvVars } from '../config';
 import { CodedError } from '../utils/errors';
 
 createConfig({
-  integrator: 'temple-wallet',
+  integrator: 'temple',
   apiKey: EnvVars.LIFI_API_KEY,
   routeOptions: {
     fee: 0.0035, // 0.35% + 0.25% lifi = 0.6%
