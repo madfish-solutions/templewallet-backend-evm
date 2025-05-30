@@ -1,5 +1,6 @@
 import { GoldRushClient, ChainID, GoldRushResponse } from '@covalenthq/client-sdk';
 import retry from 'async-retry';
+import memoizee from 'memoizee';
 
 import { EnvVars } from '../config';
 import { CodedError } from '../utils/errors';
@@ -7,9 +8,17 @@ import { CodedError } from '../utils/errors';
 const client = new GoldRushClient(EnvVars.COVALENT_API_KEY, { enableRetry: false, threadCount: 10 });
 
 const RETRY_OPTIONS: retry.Options = { maxRetryTime: 30_000 };
+const CHAIN_IDS_WITHOUT_CACHE_SUPPORT = [10, 11155420, 43114, 43113];
+const MAX_AGE = 20_000;
 
-export const getEvmBalances = (walletAddress: string, chainId: number) =>
-  retry(
+const memoizeAsync = <T extends (...args: any[]) => Promise<any>>(fn: T) =>
+  memoizee(fn, {
+    promise: true,
+    maxAge: MAX_AGE
+  });
+
+export const getEvmBalances = memoizeAsync(async (walletAddress: string, chainId: number) => {
+  return retry(
     () =>
       client.BalanceService.getTokenBalancesForWalletAddress(chainId as ChainID, walletAddress, {
         nft: true,
@@ -19,9 +28,10 @@ export const getEvmBalances = (walletAddress: string, chainId: number) =>
       }).then(processGoldRushResponse),
     RETRY_OPTIONS
   );
+});
 
-export const getEvmTokensMetadata = (walletAddress: string, chainId: number) =>
-  retry(
+export const getEvmTokensMetadata = memoizeAsync(async (walletAddress: string, chainId: number) => {
+  return retry(
     () =>
       client.BalanceService.getTokenBalancesForWalletAddress(chainId as ChainID, walletAddress, {
         nft: false,
@@ -30,13 +40,12 @@ export const getEvmTokensMetadata = (walletAddress: string, chainId: number) =>
       }).then(processGoldRushResponse),
     RETRY_OPTIONS
   );
+});
 
-const CHAIN_IDS_WITHOUT_CACHE_SUPPORT = [10, 11155420, 43114, 43113];
-
-export const getEvmCollectiblesMetadata = async (walletAddress: string, chainId: number) => {
+export const getEvmCollectiblesMetadata = memoizeAsync(async (walletAddress: string, chainId: number) => {
   const withUncached = CHAIN_IDS_WITHOUT_CACHE_SUPPORT.includes(chainId);
 
-  return await retry(
+  return retry(
     () =>
       client.NftService.getNftsForAddress(chainId as ChainID, walletAddress, {
         withUncached,
@@ -44,7 +53,7 @@ export const getEvmCollectiblesMetadata = async (walletAddress: string, chainId:
       }).then(processGoldRushResponse),
     RETRY_OPTIONS
   );
-};
+});
 
 function processGoldRushResponse<T>({ data, error, error_message, error_code }: GoldRushResponse<T>) {
   if (error) {
