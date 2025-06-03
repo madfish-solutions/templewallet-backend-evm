@@ -29,7 +29,7 @@ export const createRateLimitMiddleware = (limiter: RateLimiterRedis) => {
       return next();
     } catch {
       res.status(429).json({
-        error: 'Too many requests. Please try again later, ip: ' + ip + '.'
+        error: 'Too many requests. Please try again later'
       });
     }
   };
