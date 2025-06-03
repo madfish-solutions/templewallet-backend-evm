@@ -19,8 +19,7 @@ const PINO_LOGGER = {
       body: req.body,
       remoteAddress: req.remoteAddress,
       remotePort: req.remotePort,
-      id: req.id,
-      experimentalIp: req.headers['do-connecting-ip']
+      id: req.id
     }),
     err: err => {
       const { type, message } = stdSerializers.err(err);
