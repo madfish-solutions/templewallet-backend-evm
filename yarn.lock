@@ -41,17 +41,17 @@
   dependencies:
     regenerator-runtime "^0.14.0"
 
-"@bigmi/core@^0.2.1":
-  version "0.2.1"
-  resolved "https://registry.yarnpkg.com/@bigmi/core/-/core-0.2.1.tgz#f16a0119f04a3aa90ec23d9b7439dcd74cb5989d"
-  integrity sha512-gPwSQ7KFAyfrsiEtluwo6gzciBlnkVlbY5yTyzBTV27q0s30liY1BnzC474XRRzUtJbDEY7AumpY7CFP0xDaoA==
+"@bigmi/core@^0.3.1":
+  version "0.3.1"
+  resolved "https://registry.yarnpkg.com/@bigmi/core/-/core-0.3.1.tgz#5d0ac4ecbbf8d70af797fbbea58772dbafd4535d"
+  integrity sha512-KU2KZJmyHPtw7m9sTfOWZ2gQaE8iONpLajmh4gCZfscZIRiL1LddqWkLuFIoFNfY0jbJmvqX46leLUw5YIOVDw==
   dependencies:
     "@noble/hashes" "^1.8.0"
     bech32 "^2.0.0"
     bitcoinjs-lib "^7.0.0-rc.0"
     bs58 "^6.0.0"
     eventemitter3 "^5.0.1"
-    zustand "^5.0.4"
+    zustand "^5.0.5"
 
 "@covalenthq/client-sdk@^2.2.5":
   version "2.2.5"
@@ -526,24 +526,24 @@
     "@jridgewell/resolve-uri" "^3.0.3"
     "@jridgewell/sourcemap-codec" "^1.4.10"
 
-"@lifi/sdk@^3.7.2":
-  version "3.7.2"
-  resolved "https://registry.yarnpkg.com/@lifi/sdk/-/sdk-3.7.2.tgz#ee1578dcd8788d5d75d9c10bf54f5ef9b1a13678"
-  integrity sha512-MiB8/+NsNiLovoAVuhriGUrWDuHfW4POz6MU2nXeXdkZP04l+ZEp/qrMeuRf1gfRAKjpJzSighHMJM0N8FjBqg==
+"@lifi/sdk@^3.7.7":
+  version "3.7.7"
+  resolved "https://registry.yarnpkg.com/@lifi/sdk/-/sdk-3.7.7.tgz#a73d0e20bce586277cc2728102c6a5c59c61d115"
+  integrity sha512-+q7Ux6NDFDB4ykPDTeVr48kq3LaOEswpK2sxniGT+NZFum5L2j3aU360elIjIWUCUtD4UqjXXWcPMSgy9/Fw+w==
   dependencies:
-    "@bigmi/core" "^0.2.1"
-    "@lifi/types" "^17.14.0"
-    "@mysten/sui" "^1.29.1"
-    "@mysten/wallet-standard" "^0.15.0"
+    "@bigmi/core" "^0.3.1"
+    "@lifi/types" "^17.16.0"
+    "@mysten/sui" "^1.30.1"
+    "@mysten/wallet-standard" "^0.15.2"
     "@noble/curves" "^1.9.1"
     "@solana/wallet-adapter-base" "^0.9.26"
     "@solana/web3.js" "^1.98.2"
     bech32 "^2.0.0"
     bitcoinjs-lib "^7.0.0-rc.0"
     bs58 "^6.0.0"
-    viem "^2.30.0"
+    viem "^2.30.5"
 
-"@lifi/types@^17.14.0":
+"@lifi/types@^17.16.0":
   version "17.16.0"
   resolved "https://registry.yarnpkg.com/@lifi/types/-/types-17.16.0.tgz#bbbc582740b6cc7df7ad19120fdf1db2d7dc4915"
   integrity sha512-jaJ1VGcfWLSjhQN65bIBSGs18K8U98avb8AlFwJvcROk237ueq6lD7Sd0OheAUohodI+v3udZ9KfrBp3SLghig==
@@ -558,10 +558,10 @@
     "@mysten/utils" "0.0.0"
     "@scure/base" "^1.2.4"
 
-"@mysten/sui@1.30.1", "@mysten/sui@^1.29.1":
-  version "1.30.1"
-  resolved "https://registry.yarnpkg.com/@mysten/sui/-/sui-1.30.1.tgz#dd7d746b40cf247123e3204cc25548477135846d"
-  integrity sha512-WnyDpc5Fw6cvkJwXXmPWV80LA5YhvUgrKf86Pix0KLBSIc7aqwZi0GTPRWqiCedvayR6C3TkZqEhoDrVMusL7A==
+"@mysten/sui@1.30.2", "@mysten/sui@^1.30.1":
+  version "1.30.2"
+  resolved "https://registry.yarnpkg.com/@mysten/sui/-/sui-1.30.2.tgz#17579ae6272d04c43f6e7c0479e1446b3ed670b3"
+  integrity sha512-eIeFbMGHnTjAj+ZnTVXNU9ruu456cT7D+carwXCs4QTVITTjsYF91JUyGcsAAiZ3L+SzEbZPhUGVpZPT2Jt+0g==
   dependencies:
     "@graphql-typed-document-node/core" "^3.2.0"
     "@mysten/bcs" "1.6.1"
@@ -583,12 +583,12 @@
   dependencies:
     "@scure/base" "^1.2.4"
 
-"@mysten/wallet-standard@^0.15.0":
-  version "0.15.2"
-  resolved "https://registry.yarnpkg.com/@mysten/wallet-standard/-/wallet-standard-0.15.2.tgz#cf747444ed4dfdb32936bce3ff455308ef3e3d14"
-  integrity sha512-YwqlR8vzVGcv85Ek5MiUmdbWBVvPQ21e1tt0GnYL5fPTn5z2WTl2Na8+1CP8kAq8kse4LCtznH+U0Cs2X1ZerA==
+"@mysten/wallet-standard@^0.15.2":
+  version "0.15.3"
+  resolved "https://registry.yarnpkg.com/@mysten/wallet-standard/-/wallet-standard-0.15.3.tgz#d5eb9594f874ca93844758a1a016de5c0043459c"
+  integrity sha512-/hgDEmWWFaGQppYxb1/Q45JZudYYkiPPQ17HS6MZmdIiTwv9vfx4ttoI5SOLYQhsm7uTj3G5IwbPApuVe6/VPQ==
   dependencies:
-    "@mysten/sui" "1.30.1"
+    "@mysten/sui" "1.30.2"
     "@wallet-standard/core" "1.1.0"
 
 "@napi-rs/wasm-runtime@^0.2.9":
@@ -4530,10 +4530,24 @@ vary@^1, vary@^1.1.2:
   resolved "https://registry.yarnpkg.com/vary/-/vary-1.1.2.tgz#2299f02c6ded30d4a5961b0b9f74524a18f634fc"
   integrity sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==
 
-viem@^2.24.3, viem@^2.30.0:
+viem@^2.24.3:
   version "2.30.1"
   resolved "https://registry.yarnpkg.com/viem/-/viem-2.30.1.tgz#22cdd653c57b4ff342524afd6974b08b302a7875"
   integrity sha512-CkoS5Vv6kiRGmRF2xO2z275Gu90vTrKZHf/ckYXxP2J94UvCnFvUcbRdfit6uebj1I8nFwkGlkkOMuOZDHyO4w==
+  dependencies:
+    "@noble/curves" "1.9.1"
+    "@noble/hashes" "1.8.0"
+    "@scure/bip32" "1.7.0"
+    "@scure/bip39" "1.6.0"
+    abitype "1.0.8"
+    isows "1.0.7"
+    ox "0.7.1"
+    ws "8.18.2"
+
+viem@^2.30.5:
+  version "2.30.6"
+  resolved "https://registry.yarnpkg.com/viem/-/viem-2.30.6.tgz#fffe69aa4d16ab1802b21b44856ae09bacf10f9b"
+  integrity sha512-N3vGy3pZ+EVgQRuWqQhZPFXxQE8qMRrBd3uM+KLc1Ub2w6+vkyr7umeWQCM4c+wlsCdByUgh2630MDMLquMtpg==
   dependencies:
     "@noble/curves" "1.9.1"
     "@noble/hashes" "1.8.0"
@@ -4712,7 +4726,7 @@ yup@^1.6.1:
     toposort "^2.0.2"
     type-fest "^2.19.0"
 
-zustand@^5.0.4:
+zustand@^5.0.5:
   version "5.0.5"
   resolved "https://registry.yarnpkg.com/zustand/-/zustand-5.0.5.tgz#3e236f6a953142d975336d179bc735d97db17e84"
   integrity sha512-mILtRfKW9xM47hqxGIxCv12gXusoY/xTSHBYApXozR0HmQv299whhBeeAcRy+KrPPybzosvJBCOmVjq6x12fCg==
