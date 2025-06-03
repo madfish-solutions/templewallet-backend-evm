@@ -14,7 +14,7 @@ export const covalentLimiter = new RateLimiterRedis({
 export const txLimiter = new RateLimiterRedis({
   storeClient: redisClient,
   keyPrefix: 'rl-transactions',
-  points: 10,
+  points: 1,
   duration: 60,
   blockDuration: 60
 });
