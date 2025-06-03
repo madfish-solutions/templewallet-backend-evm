@@ -21,10 +21,10 @@ export const txLimiter = new RateLimiterRedis({
 
 export const createRateLimitMiddleware = (limiter: RateLimiterRedis) => {
   return async (req: Request, res: Response, next: NextFunction) => {
-    const ip = req.ip;
+    const ip = req.headers['do-connecting-ip'] ?? req.ip;
 
     try {
-      await limiter.consume(ip!);
+      await limiter.consume(ip as string);
 
       return next();
     } catch {
