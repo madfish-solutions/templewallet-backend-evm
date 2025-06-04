@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 
+import { covalentLimiter, createRateLimitMiddleware, txLimiter } from '../rateLimiter';
 import { withCodedExceptionHandler } from '../utils/express-helpers';
 import {
   evmMultichainQueryParamsSchema,
@@ -23,6 +24,7 @@ const sendData = (data: any, res: Response<any, Record<string, any>>) => {
 apiRouter
   .get(
     '/balances',
+    createRateLimitMiddleware(covalentLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress, chainId } = await evmQueryParamsSchema.validate(req.query);
 
@@ -31,6 +33,7 @@ apiRouter
   )
   .get(
     '/tokens-metadata',
+    createRateLimitMiddleware(covalentLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress, chainId } = await evmQueryParamsSchema.validate(req.query);
 
@@ -39,6 +42,7 @@ apiRouter
   )
   .get(
     '/collectibles-metadata',
+    createRateLimitMiddleware(covalentLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress, chainId } = await evmQueryParamsSchema.validate(req.query);
 
@@ -55,6 +59,7 @@ apiRouter
   )
   .get(
     '/transactions/v2',
+    createRateLimitMiddleware(txLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress, chainId, contractAddress, olderThanBlockHeight } =
         await evmQueryParamsTransactionsSchema.validate(req.query);
