@@ -17,6 +17,16 @@ const memoizeAsync = <T extends (...args: any[]) => Promise<any>>(fn: T) =>
     maxAge: MAX_AGE
   });
 
+export const getEvmAccountActivity = memoizeAsync((walletAddress: string) =>
+  retry(
+    () =>
+      client.AllChainsService.getAddressActivity(walletAddress, { testnets: false }).then(res =>
+        processGoldRushResponse(res, false)
+      ),
+    RETRY_OPTIONS
+  )
+);
+
 export const getEvmBalances = memoizeAsync(async (walletAddress: string, chainId: number) => {
   return retry(
     () =>
@@ -25,7 +35,7 @@ export const getEvmBalances = memoizeAsync(async (walletAddress: string, chainId
         noNftAssetMetadata: true,
         quoteCurrency: 'USD',
         noSpam: false
-      }).then(processGoldRushResponse),
+      }).then(res => processGoldRushResponse(res)),
     RETRY_OPTIONS
   );
 });
@@ -37,7 +47,7 @@ export const getEvmTokensMetadata = memoizeAsync(async (walletAddress: string, c
         nft: false,
         quoteCurrency: 'USD',
         noSpam: false
-      }).then(processGoldRushResponse),
+      }).then(res => processGoldRushResponse(res)),
     RETRY_OPTIONS
   );
 });
@@ -50,17 +60,25 @@ export const getEvmCollectiblesMetadata = memoizeAsync(async (walletAddress: str
       client.NftService.getNftsForAddress(chainId as ChainID, walletAddress, {
         withUncached,
         noSpam: false
-      }).then(processGoldRushResponse),
+      }).then(res => processGoldRushResponse(res)),
     RETRY_OPTIONS
   );
 });
 
-function processGoldRushResponse<T>({ data, error, error_message, error_code }: GoldRushResponse<T>) {
+function processGoldRushResponse<T>({ data, error, error_message, error_code }: GoldRushResponse<T>): string;
+function processGoldRushResponse<T>(
+  { data, error, error_message, error_code }: GoldRushResponse<T>,
+  serialize: false
+): T;
+function processGoldRushResponse<T>(
+  { data, error, error_message, error_code }: GoldRushResponse<T>,
+  serialize = true
+): string | T {
   if (error) {
     const code = error_code && Number.isSafeInteger(Number(error_code)) ? Number(error_code) : 500;
 
     throw new CodedError(code, error_message ?? 'Unknown error');
   }
 
-  return JSON.stringify(data, (_, value) => (typeof value === 'bigint' ? value.toString() : value));
+  return serialize ? JSON.stringify(data, (_, value) => (typeof value === 'bigint' ? value.toString() : value)) : data;
 }

@@ -1,12 +1,16 @@
 import { isAddress } from '@ethersproject/address';
 import { object as objectSchema, string as stringSchema, number as numberSchema } from 'yup';
 
-const addressSchema = stringSchema().test(
+export const addressSchema = stringSchema().test(
   'is-valid-address',
   'Invalid address',
   value => value === undefined || isAddress(value)
 );
 const naturalNumberSchema = numberSchema().integer().min(1);
+
+export const evmMultichainQueryParamsSchema = objectSchema().shape({
+  walletAddress: addressSchema.clone().required('walletAddress is undefined')
+});
 
 export const evmQueryParamsSchema = objectSchema().shape({
   walletAddress: addressSchema.clone().required('walletAddress is undefined'),
