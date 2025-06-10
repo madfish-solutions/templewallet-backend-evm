@@ -1,7 +1,9 @@
 import { Router, Response } from 'express';
 
+import { covalentLimiter, createRateLimitMiddleware, txLimiter } from '../rateLimiter';
 import { withCodedExceptionHandler } from '../utils/express-helpers';
 import {
+  evmMultichainQueryParamsSchema,
   evmQueryParamsSchema,
   evmQueryParamsTransactionsSchema,
   swapConnectionsQuerySchema,
@@ -10,7 +12,7 @@ import {
 } from '../utils/schemas';
 
 import { fetchTransactions } from './alchemy';
-import { getEvmBalances, getEvmCollectiblesMetadata, getEvmTokensMetadata } from './covalent';
+import { getEvmAccountActivity, getEvmBalances, getEvmCollectiblesMetadata, getEvmTokensMetadata } from './covalent';
 import { getSwapConnectionsRoute, getSwapRoute, getSwapTokensMetadata } from './lifi';
 
 export const apiRouter = Router();
@@ -26,6 +28,7 @@ const sendData = (data: any, res: Response<any, Record<string, any>>) => {
 apiRouter
   .get(
     '/balances',
+    createRateLimitMiddleware(covalentLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress, chainId } = await evmQueryParamsSchema.validate(req.query);
 
@@ -34,6 +37,7 @@ apiRouter
   )
   .get(
     '/tokens-metadata',
+    createRateLimitMiddleware(covalentLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress, chainId } = await evmQueryParamsSchema.validate(req.query);
 
@@ -83,6 +87,7 @@ apiRouter
   )
   .get(
     '/collectibles-metadata',
+    createRateLimitMiddleware(covalentLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress, chainId } = await evmQueryParamsSchema.validate(req.query);
 
@@ -90,7 +95,16 @@ apiRouter
     })
   )
   .get(
+    '/is-initialized',
+    withCodedExceptionHandler(async (req, res) => {
+      const { walletAddress } = await evmMultichainQueryParamsSchema.validate(req.query);
+      const { items: activityItems } = await getEvmAccountActivity(walletAddress);
+      res.status(200).json({ isInitialized: (activityItems ?? []).length > 0 });
+    })
+  )
+  .get(
     '/transactions/v2',
+    createRateLimitMiddleware(txLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress, chainId, contractAddress, olderThanBlockHeight } =
         await evmQueryParamsTransactionsSchema.validate(req.query);
