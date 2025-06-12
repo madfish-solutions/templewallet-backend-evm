@@ -1,4 +1,4 @@
-import { GoldRushClient, ChainID, GoldRushResponse } from '@covalenthq/client-sdk';
+import { GoldRushClient, ChainID, GoldRushResponse, ChainActivityResponse } from '@covalenthq/client-sdk';
 import memoizee from 'memoizee';
 
 import { COVALENT_CONCURRENCY, COVALENT_RPS, EnvVars } from '../config';
@@ -123,8 +123,19 @@ const { fetch, queue, queueEvents } = createQueuedFetchJobs<CovalentQueueJobName
 export const covalentRequestsQueue = queue;
 export const covalentRequestsQueueEvents = queueEvents;
 
-export const getEvmAccountActivity = memoizeAsync((walletAddress: string) =>
-  fetch('accountActivity', { walletAddress })
+type AfterJsonCycle<T> = T extends string | number | boolean | null | undefined
+  ? T
+  : T extends Date
+    ? string
+    : T extends Array<infer U>
+      ? AfterJsonCycle<U>[]
+      : T extends object
+        ? { [K in keyof T]: AfterJsonCycle<T[K]> }
+        : never;
+
+export const getEvmAccountActivity = memoizeAsync(
+  (walletAddress: string): Promise<AfterJsonCycle<ChainActivityResponse>> =>
+    fetch('accountActivity', { walletAddress }).then(JSON.parse)
 );
 
 export const getEvmBalances = memoizeAsync((walletAddress: string, chainId: number) =>

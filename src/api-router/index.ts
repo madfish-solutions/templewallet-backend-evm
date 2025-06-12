@@ -53,7 +53,7 @@ apiRouter
     '/is-initialized',
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress } = await evmMultichainQueryParamsSchema.validate(req.query);
-      const { items: activityItems } = JSON.parse(await getEvmAccountActivity(walletAddress));
+      const { items: activityItems } = await getEvmAccountActivity(walletAddress);
       res.status(200).json({ isInitialized: (activityItems ?? []).length > 0 });
     })
   )
