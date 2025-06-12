@@ -41,13 +41,14 @@
     "pino": "^9.6.0",
     "pino-http": "^10.4.0",
     "pino-pretty": "^13.0.0",
-    "rate-limiter-flexible": "^7.1.0",
+    "rate-limiter-flexible": "^7.1.1",
     "yup": "^1.6.1"
   },
   "devDependencies": {
     "@types/async-retry": "^1.4.9",
     "@types/express": "^5.0.1",
     "@types/mocha": "^10.0.10",
+    "@types/memoizee": "^0.4.12",
     "@types/node": "^22.15.3",
     "@types/passport": "^1.0.17",
     "@types/passport-local": "^1.0.38",
