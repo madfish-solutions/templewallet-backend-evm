@@ -22,8 +22,12 @@ export const EnvVars = {
 export const PORT = getEnvNat('PORT', 3000);
 export const COVALENT_RPS = getEnvNat('COVALENT_RPS', 50);
 export const COVALENT_CONCURRENCY = getEnvNat('COVALENT_CONCURRENCY', 10);
+export const COVALENT_ATTEMPTS = getEnvNat('COVALENT_ATTEMPTS', 5);
+export const COVALENT_BACKOFF_DELAY = getEnvNat('COVALENT_BACKOFF_DELAY', 2000);
 export const ALCHEMY_CUPS = getEnvNat('ALCHEMY_CUPS', 500);
 export const ALCHEMY_CONCURRENCY = getEnvNat('ALCHEMY_CONCURRENCY');
+export const ALCHEMY_ATTEMPTS = getEnvNat('ALCHEMY_ATTEMPTS', 5);
+export const ALCHEMY_BACKOFF_DELAY = getEnvNat('ALCHEMY_BACKOFF_DELAY', 1000);
 export const IS_TESTING = getEnv('NODE_ENV') === 'test';
 
 for (const name in EnvVars) {

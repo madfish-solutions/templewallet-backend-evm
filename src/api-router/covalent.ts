@@ -8,7 +8,7 @@ import {
 } from '@covalenthq/client-sdk';
 import memoizee from 'memoizee';
 
-import { COVALENT_CONCURRENCY, COVALENT_RPS, EnvVars } from '../config';
+import { COVALENT_ATTEMPTS, COVALENT_BACKOFF_DELAY, COVALENT_CONCURRENCY, COVALENT_RPS, EnvVars } from '../config';
 import { CodedError } from '../utils/errors';
 import { createQueuedFetchJobs } from '../utils/queued-fetch-jobs';
 
@@ -137,6 +137,8 @@ const { fetch, queue } = createQueuedFetchJobs<CovalentQueueJobName, CovalentQue
     limitDuration: 1000,
     limitAmount: COVALENT_RPS * COST_DECIMALS_MULTIPLIER,
     concurrency: COVALENT_CONCURRENCY,
+    attempts: COVALENT_ATTEMPTS,
+    backoffDelay: COVALENT_BACKOFF_DELAY,
     getDeduplicationId: getCovalentJobDeduplicationId,
     getOutput: getCovalentResponse
   }

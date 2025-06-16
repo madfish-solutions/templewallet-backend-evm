@@ -10,7 +10,7 @@ import {
 import { range, uniqBy, uniqueId } from 'lodash';
 import memoizee from 'memoizee';
 
-import { ALCHEMY_CONCURRENCY, ALCHEMY_CUPS, EnvVars } from '../config';
+import { ALCHEMY_ATTEMPTS, ALCHEMY_BACKOFF_DELAY, ALCHEMY_CONCURRENCY, ALCHEMY_CUPS, EnvVars } from '../config';
 import { CodedError } from '../utils/errors';
 import { createQueuedFetchJobs } from '../utils/queued-fetch-jobs';
 
@@ -143,6 +143,8 @@ const { fetch, queue } = createQueuedFetchJobs<AlchemyQueueJobName, AlchemyQueue
   limitDuration: 1000,
   limitAmount: ALCHEMY_CUPS,
   concurrency: ALCHEMY_CONCURRENCY,
+  attempts: ALCHEMY_ATTEMPTS,
+  backoffDelay: ALCHEMY_BACKOFF_DELAY,
   getDeduplicationId: getAlchemyJobDeduplicationId,
   getOutput: getAlchemyResponse
 });

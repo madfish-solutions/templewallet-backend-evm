@@ -16,7 +16,9 @@ interface QueuedFetchJobsConfig<
   costs: Record<Name, number>;
   limitDuration: number;
   limitAmount: number;
-  timeout?: number;
+  rateLimitTimeout?: number;
+  attempts?: number;
+  backoffDelay?: number;
   getDeduplicationId: <N extends Name>(name: N, data: Inputs[N]) => string;
   getOutput: <N extends Name>(name: N, data: Inputs[N]) => Promise<Outputs[N]>;
 }
@@ -31,7 +33,9 @@ export const createQueuedFetchJobs = <
   limitAmount,
   concurrency = Math.floor(limitAmount / Math.min(...Object.values<number>(costs))),
   limitDuration,
-  timeout = 30_000,
+  rateLimitTimeout = 30_000,
+  attempts = 5,
+  backoffDelay = 1000,
   getDeduplicationId,
   getOutput
 }: QueuedFetchJobsConfig<Name, Inputs, Outputs>) => {
@@ -44,10 +48,10 @@ export const createQueuedFetchJobs = <
   const queue = new Queue<Inputs[Name], Outputs[Name], Name, Inputs[Name], Outputs[Name], Name>(queueName, {
     connection: redisClient,
     defaultJobOptions: {
-      attempts: Math.floor(Math.log2(timeout / 1000)) + 1,
+      attempts,
       backoff: {
         type: 'exponential',
-        delay: 1000
+        delay: backoffDelay
       },
       removeOnComplete: {
         age: 60 * 60, // 1 hour
@@ -76,7 +80,7 @@ export const createQueuedFetchJobs = <
             await rateLimiter.consume('points', costs[name]);
             res();
           } catch (e) {
-            if (Date.now() - waitStartTs > timeout) {
+            if (Date.now() - waitStartTs > rateLimitTimeout) {
               rej(new UnrecoverableError('Timed out'));
             } else {
               setTimeout(doConsumeAttempt, e instanceof RateLimiterRes ? e.msBeforeNext || 100 : 1000);
