@@ -51,6 +51,7 @@ apiRouter
   )
   .get(
     '/is-initialized',
+    createRateLimitMiddleware(covalentLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress } = await evmMultichainQueryParamsSchema.validate(req.query);
       const { items: activityItems } = await getEvmAccountActivity(walletAddress);

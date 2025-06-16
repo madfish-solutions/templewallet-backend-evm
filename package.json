@@ -14,8 +14,7 @@
     "lint:fix": "eslint ./src --ext .js,.ts --fix",
     "lint:rules": "eslint --print-config",
     "clean": "rimraf dist/",
-    "find-deadcode": "ts-prune --error",
-    "test": "NODE_ENV=test mocha --require ts-node/register --require 'src/fixtures.ts' 'src/**/*.spec.ts' --jobs 1 --exit"
+    "find-deadcode": "ts-prune --error"
   },
   "dependencies": {
     "@bull-board/express": "^6.9.2",

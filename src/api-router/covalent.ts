@@ -1,20 +1,35 @@
-import { GoldRushClient, ChainID, GoldRushResponse, ChainActivityResponse } from '@covalenthq/client-sdk';
+import {
+  GoldRushClient,
+  ChainID,
+  GoldRushResponse,
+  ChainActivityResponse,
+  BalancesResponse,
+  NftAddressBalanceNftResponse
+} from '@covalenthq/client-sdk';
 import memoizee from 'memoizee';
 
 import { COVALENT_CONCURRENCY, COVALENT_RPS, EnvVars } from '../config';
 import { CodedError } from '../utils/errors';
 import { createQueuedFetchJobs } from '../utils/queued-fetch-jobs';
 
+import { Serializable, toSerializable } from './utils';
+
 const client = new GoldRushClient(EnvVars.COVALENT_API_KEY, { enableRetry: false, threadCount: COVALENT_CONCURRENCY });
 
-export type CovalentQueueJobName = 'accountActivity' | 'balances' | 'tokensMetadata' | 'collectiblesMetadata';
-type CovalentOneChainJobName = Exclude<CovalentQueueJobName, 'accountActivity'>;
+type CovalentOneChainJobName = 'balances' | 'tokensMetadata' | 'collectiblesMetadata';
+type CovalentQueueJobName = 'accountActivity' | CovalentOneChainJobName;
 
-export interface CovalentQueueJobsInputs
-  extends Record<CovalentOneChainJobName, { walletAddress: string; chainId: number }> {
+interface CovalentQueueJobsInputs extends Record<CovalentOneChainJobName, { walletAddress: string; chainId: number }> {
   accountActivity: {
     walletAddress: string;
   };
+}
+
+interface CovalentQueueJobsOutputs {
+  accountActivity: Serializable<ChainActivityResponse>;
+  balances: Serializable<BalancesResponse>;
+  tokensMetadata: Serializable<BalancesResponse>;
+  collectiblesMetadata: Serializable<NftAddressBalanceNftResponse>;
 }
 
 function getCovalentJobDeduplicationId(
@@ -36,16 +51,21 @@ const memoizeAsync = <T extends (...args: any[]) => Promise<any>>(fn: T) =>
   });
 
 type JobArgs<T extends CovalentQueueJobName> = [name: T, data: CovalentQueueJobsInputs[T]];
-async function getCovalentResponse(...args: JobArgs<CovalentOneChainJobName>): Promise<string>;
+async function getCovalentResponse(...args: JobArgs<'accountActivity'>): Promise<Serializable<ChainActivityResponse>>;
+async function getCovalentResponse(...args: JobArgs<'balances'>): Promise<Serializable<BalancesResponse>>;
+async function getCovalentResponse(...args: JobArgs<'tokensMetadata'>): Promise<Serializable<BalancesResponse>>;
 async function getCovalentResponse(
-  name: 'accountActivity',
-  data: CovalentQueueJobsInputs['accountActivity']
-): Promise<string>;
+  ...args: JobArgs<'collectiblesMetadata'>
+): Promise<Serializable<NftAddressBalanceNftResponse>>;
 async function getCovalentResponse(
-  ...args: JobArgs<CovalentOneChainJobName> | JobArgs<'accountActivity'>
-): Promise<string> {
+  ...args:
+    | JobArgs<'accountActivity'>
+    | JobArgs<'balances'>
+    | JobArgs<'tokensMetadata'>
+    | JobArgs<'collectiblesMetadata'>
+): Promise<Serializable<CovalentQueueJobsOutputs[CovalentQueueJobName]>> {
   const [name, data] = args;
-  let response: GoldRushResponse<unknown>;
+  let response: GoldRushResponse<ChainActivityResponse | BalancesResponse | NftAddressBalanceNftResponse>;
   switch (name) {
     case 'accountActivity':
       response = await client.AllChainsService.getAddressActivity(data.walletAddress, { testnets: false });
@@ -94,48 +114,38 @@ async function getCovalentResponse(
     throw new CodedError(code, error_message ?? 'Unknown error');
   }
 
-  return JSON.stringify(response.data, (_, value) => (typeof value === 'bigint' ? value.toString() : value));
+  return toSerializable(response.data);
 }
 
-export const COST_DECIMALS_MULTIPLIER = 10;
+const COST_DECIMALS_MULTIPLIER = 10;
 /*
  * 1. The values are multiplied by `COST_DECIMALS_MULTIPLIER` to avoid errors in the rate limiter caused by floating
  *    point values.
  * 2. The cost for `collectiblesMetadata` is bigger because two requests may be required if the list of supported chains
  *    is changed.
  */
-export const covalentRequestsCosts = {
+const covalentRequestsCosts = {
   accountActivity: COST_DECIMALS_MULTIPLIER,
   balances: COST_DECIMALS_MULTIPLIER,
   tokensMetadata: COST_DECIMALS_MULTIPLIER,
   collectiblesMetadata: Math.round(1.1 * COST_DECIMALS_MULTIPLIER)
 };
-const { fetch, queue, queueEvents } = createQueuedFetchJobs<CovalentQueueJobName, CovalentQueueJobsInputs, string>({
-  queueName: 'covalent-requests',
-  costs: covalentRequestsCosts,
-  limitDuration: 1000,
-  limitAmount: COVALENT_RPS * COST_DECIMALS_MULTIPLIER,
-  concurrency: COVALENT_CONCURRENCY,
-  getDeduplicationId: getCovalentJobDeduplicationId,
-  getOutput: getCovalentResponse
-});
+const { fetch, queue } = createQueuedFetchJobs<CovalentQueueJobName, CovalentQueueJobsInputs, CovalentQueueJobsOutputs>(
+  {
+    queueName: 'covalent-requests',
+    costs: covalentRequestsCosts,
+    limitDuration: 1000,
+    limitAmount: COVALENT_RPS * COST_DECIMALS_MULTIPLIER,
+    concurrency: COVALENT_CONCURRENCY,
+    getDeduplicationId: getCovalentJobDeduplicationId,
+    getOutput: getCovalentResponse
+  }
+);
 
 export const covalentRequestsQueue = queue;
-export const covalentRequestsQueueEvents = queueEvents;
 
-type AfterJsonCycle<T> = T extends string | number | boolean | null | undefined
-  ? T
-  : T extends Date
-    ? string
-    : T extends Array<infer U>
-      ? AfterJsonCycle<U>[]
-      : T extends object
-        ? { [K in keyof T]: AfterJsonCycle<T[K]> }
-        : never;
-
-export const getEvmAccountActivity = memoizeAsync(
-  (walletAddress: string): Promise<AfterJsonCycle<ChainActivityResponse>> =>
-    fetch('accountActivity', { walletAddress }).then(JSON.parse)
+export const getEvmAccountActivity = memoizeAsync((walletAddress: string) =>
+  fetch('accountActivity', { walletAddress })
 );
 
 export const getEvmBalances = memoizeAsync((walletAddress: string, chainId: number) =>

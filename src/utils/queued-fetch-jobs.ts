@@ -1,4 +1,4 @@
-import { Job, Queue, QueueEvents, QueueEventsListener, QueueEventsProducer, UnrecoverableError, Worker } from 'bullmq';
+import { Queue, QueueEvents, UnrecoverableError, Worker } from 'bullmq';
 import { RateLimiterRedis, RateLimiterRes } from 'rate-limiter-flexible';
 
 import { IS_TESTING } from '../config';
@@ -9,7 +9,7 @@ import { CodedError } from './errors';
 interface QueuedFetchJobsConfig<
   Name extends string,
   Inputs extends Record<Name, unknown>,
-  SuccessOutput extends string | number
+  Outputs extends Record<Name, unknown>
 > {
   queueName: string;
   concurrency?: number;
@@ -18,13 +18,13 @@ interface QueuedFetchJobsConfig<
   limitAmount: number;
   timeout?: number;
   getDeduplicationId: <N extends Name>(name: N, data: Inputs[N]) => string;
-  getOutput: <N extends Name>(name: N, data: Inputs[N]) => Promise<SuccessOutput>;
+  getOutput: <N extends Name>(name: N, data: Inputs[N]) => Promise<Outputs[N]>;
 }
 
 export const createQueuedFetchJobs = <
   Name extends string,
   Inputs extends Record<Name, unknown>,
-  SuccessOutput extends string | number
+  Outputs extends Record<Name, unknown>
 >({
   queueName,
   costs,
@@ -34,15 +34,14 @@ export const createQueuedFetchJobs = <
   timeout = 30_000,
   getDeduplicationId,
   getOutput
-}: QueuedFetchJobsConfig<Name, Inputs, SuccessOutput>) => {
+}: QueuedFetchJobsConfig<Name, Inputs, Outputs>) => {
   const rateLimiter = new RateLimiterRedis({
     storeClient: redisClient,
     points: limitAmount,
     duration: limitDuration / 1000,
-    keyPrefix: `rate-limiter:${queueName}`
+    keyPrefix: `job-rate-limiter:${queueName}`
   });
-  type WrappedOutput = { output: SuccessOutput };
-  const queue = new Queue<Inputs[Name], void, Name>(queueName, {
+  const queue = new Queue<Inputs[Name], Outputs[Name], Name, Inputs[Name], Outputs[Name], Name>(queueName, {
     connection: redisClient,
     defaultJobOptions: {
       attempts: Math.floor(Math.log2(timeout / 1000)) + 1,
@@ -56,16 +55,14 @@ export const createQueuedFetchJobs = <
       },
       removeOnFail: {
         age: 60 * 60, // 1 hour
-        count: 5000
+        count: 2000
       }
     }
   });
   queue.setGlobalConcurrency(concurrency);
 
-  const queueEventsProducer = new QueueEventsProducer(queueName, { connection: redisClient });
   const queueEvents = new QueueEvents(queueName, { connection: redisClient });
-  type CustomListener = QueueEventsListener & Record<string, (args: WrappedOutput, id: string) => void>;
-  const worker = new Worker<Inputs[Name], void, Name>(
+  const worker = new Worker<Inputs[Name], Outputs[Name], Name>(
     queueName,
     async job => {
       const { name, data } = job;
@@ -94,11 +91,7 @@ export const createQueuedFetchJobs = <
       }
 
       try {
-        const output = await getOutput(name, data);
-        await queueEventsProducer.publishEvent<{ eventName: string } & WrappedOutput>({
-          eventName: getDeduplicationId(name, data),
-          output
-        });
+        return await getOutput(name, data);
       } catch (e) {
         if (e instanceof CodedError && e.code >= 400 && e.code < 500 && e.code !== 429) {
           throw new UnrecoverableError(JSON.stringify({ code: e.code, message: e.message }));
@@ -114,36 +107,24 @@ export const createQueuedFetchJobs = <
     { connection: redisClient, concurrency }
   );
 
-  const fetch = async <N extends Name>(name: N, data: Inputs[N]) => {
+  const fetch = async <N extends Name>(name: N, data: Inputs[N]): Promise<Outputs[N]> => {
     const id = getDeduplicationId(name, data);
-    let listener: (args: WrappedOutput) => void;
-    let job: Job | undefined;
-    let failedListener: QueueEventsListener['failed'];
+    try {
+      const job = await queue.add(name, data, { deduplication: { id } });
 
-    return new Promise<SuccessOutput>(async (resolve, reject) => {
-      listener = ({ output }: WrappedOutput) => resolve(output);
-      failedListener = async ({ jobId, failedReason }) => void (jobId === job?.id && reject(new Error(failedReason)));
-      queueEvents.on<CustomListener>(id, listener);
-      queueEvents.on('failed', failedListener);
-      // @ts-expect-error
-      job = await queue.add(name, data, { deduplication: { id } });
-    })
-      .catch(e => {
-        if (e instanceof Error) {
-          try {
-            const parsedMessage = JSON.parse(e.message);
-            if (parsedMessage.code && parsedMessage.message) {
-              throw new CodedError(parsedMessage.code, parsedMessage.message);
-            }
-          } catch {}
-        }
+      return (await job.waitUntilFinished(queueEvents)) as Outputs[N];
+    } catch (e) {
+      if (e instanceof Error) {
+        try {
+          const parsedMessage = JSON.parse(e.message);
+          if (parsedMessage.code && parsedMessage.message) {
+            throw new CodedError(parsedMessage.code, parsedMessage.message);
+          }
+        } catch {}
+      }
 
-        throw e;
-      })
-      .finally(() => {
-        queueEvents.off<CustomListener>(id, listener);
-        queueEvents.off('failed', failedListener);
-      });
+      throw e;
+    }
   };
 
   return { fetch, queue, worker, queueEvents };

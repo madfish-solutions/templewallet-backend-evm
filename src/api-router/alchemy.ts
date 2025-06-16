@@ -18,8 +18,8 @@ const ETH_TOKEN_SLUG = 'eth' as const;
 const TR_PSEUDO_LIMIT = 50;
 const APPROVALS_REQUESTS_LIMIT_PER_TXS_REQUEST = 3;
 
-export type AlchemyQueueJobName = 'assetTransfers' | 'approvals';
-export interface AlchemyQueueJobsInputs {
+type AlchemyQueueJobName = 'assetTransfers' | 'approvals';
+interface AlchemyQueueJobsInputs {
   assetTransfers: {
     /** Only for testing and debugging */
     txReqId: string;
@@ -40,7 +40,12 @@ export interface AlchemyQueueJobsInputs {
   };
 }
 
-export interface FetchTransactionsResponse {
+interface AlchemyQueueJobsOutputs {
+  assetTransfers: AssetTransfersWithMetadataResult[];
+  approvals: Log[];
+}
+
+interface FetchTransactionsResponse {
   transfers: AssetTransfersWithMetadataResult[];
   approvals: Log[];
 }
@@ -64,12 +69,13 @@ function getAlchemyJobDeduplicationId(...args: JobArgs<'assetTransfers'> | JobAr
 
 const BLOCK_RANGE_ERROR_REGEX = /You can make eth_getLogs requests with up to a (\d+) block range./;
 
-function getAlchemyResponse(...args: JobArgs<'assetTransfers'>): Promise<string>;
-function getAlchemyResponse(...args: JobArgs<'approvals'>): Promise<string>;
-function getAlchemyResponse(...args: JobArgs<'assetTransfers'> | JobArgs<'approvals'>): Promise<string> {
+async function getAlchemyResponse(...args: JobArgs<'assetTransfers'>): Promise<AssetTransfersWithMetadataResult[]>;
+async function getAlchemyResponse(...args: JobArgs<'approvals'>): Promise<Log[]>;
+async function getAlchemyResponse(
+  ...args: JobArgs<'assetTransfers'> | JobArgs<'approvals'>
+): Promise<AssetTransfersWithMetadataResult[] | Log[]> {
   const [name, data] = args;
   const alchemy = getAlchemyClient(data.chainId);
-  let responsePromise: Promise<unknown>;
 
   if (name === 'assetTransfers') {
     const { accAddress, toAcc, toBlock } = data;
@@ -100,40 +106,38 @@ function getAlchemyResponse(...args: JobArgs<'assetTransfers'> | JobArgs<'approv
     else reqOptions.fromAddress = accAddress;
 
     // Alchemy SDK processes Error 429 itself. See: https://docs.alchemy.com/reference/throughput#option-1-alchemy-sdk
-    responsePromise = alchemy.core.getAssetTransfers(reqOptions).then(r => r.transfers);
-  } else {
-    const { accAddress, contractAddress, toBlock, fromBlock } = data;
-
-    responsePromise = alchemy.core
-      .getLogs({
-        address: contractAddress,
-        topics: [
-          [
-            '0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925', // Approval
-            '0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31' // ApprovalForAll
-          ],
-          `0x${accAddress.slice(2).padStart(64, '0')}`
-        ],
-        toBlock,
-        fromBlock
-      })
-      .catch(e => {
-        if (e?.error?.code === -32602) return [];
-
-        if (e?.message?.match(BLOCK_RANGE_ERROR_REGEX)) {
-          throw new CodedError(400, e.message);
-        }
-
-        throw e;
-      });
+    return alchemy.core.getAssetTransfers(reqOptions).then(r => r.transfers);
   }
 
-  return responsePromise.then(JSON.stringify);
+  const { accAddress, contractAddress, toBlock, fromBlock } = data;
+
+  try {
+    return await alchemy.core.getLogs({
+      address: contractAddress,
+      topics: [
+        [
+          '0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925', // Approval
+          '0x17307eab39ab6107e8899845ad3d59bd9653f200f220920489ca2b5937696c31' // ApprovalForAll
+        ],
+        `0x${accAddress.slice(2).padStart(64, '0')}`
+      ],
+      toBlock,
+      fromBlock
+    });
+  } catch (e: any) {
+    if (e?.error?.code === -32602) return [];
+
+    if (e?.message?.match(BLOCK_RANGE_ERROR_REGEX)) {
+      throw new CodedError(400, e.message);
+    }
+
+    throw e;
+  }
 }
 
-export const alchemyRequestsCosts = { assetTransfers: 120, approvals: 60 };
+const alchemyRequestsCosts = { assetTransfers: 120, approvals: 60 };
 
-const { fetch, queue, queueEvents } = createQueuedFetchJobs<AlchemyQueueJobName, AlchemyQueueJobsInputs, string>({
+const { fetch, queue } = createQueuedFetchJobs<AlchemyQueueJobName, AlchemyQueueJobsInputs, AlchemyQueueJobsOutputs>({
   queueName: 'alchemy-requests',
   costs: alchemyRequestsCosts,
   limitDuration: 1000,
@@ -144,7 +148,6 @@ const { fetch, queue, queueEvents } = createQueuedFetchJobs<AlchemyQueueJobName,
 });
 
 export const alchemyRequestsQueue = queue;
-export const alchemyRequestsQueueEvents = queueEvents;
 
 export async function fetchTransactions(
   chainId: number,
@@ -163,16 +166,14 @@ export async function fetchTransactions(
   const highestBlockNum = transfers.at(0)!.blockNum;
   const lowestBlockNum = transfers.at(-1)!.blockNum;
   try {
-    approvals = JSON.parse(
-      await fetch('approvals', {
-        txReqId,
-        chainId,
-        accAddress,
-        contractAddress,
-        toBlock: highestBlockNum,
-        fromBlock: lowestBlockNum
-      })
-    );
+    approvals = await fetch('approvals', {
+      txReqId,
+      chainId,
+      accAddress,
+      contractAddress,
+      toBlock: highestBlockNum,
+      fromBlock: lowestBlockNum
+    });
   } catch (e: any) {
     const blockErrorRangeMatch = e?.message?.match(BLOCK_RANGE_ERROR_REGEX);
 
@@ -239,10 +240,7 @@ export async function fetchTransactions(
         })
       )
     );
-    approvals = uniqBy(
-      approvalsChunks.flatMap(approvalsChunk => JSON.parse(approvalsChunk)),
-      log => `${log.transactionHash}-${log.logIndex}`
-    );
+    approvals = uniqBy(approvalsChunks.flat(), log => `${log.transactionHash}-${log.logIndex}`);
   }
 
   return { transfers, approvals };
@@ -264,7 +262,7 @@ async function fetchTransfers(
     fetch('assetTransfers', { ...transfersRequestBase, toAcc: true })
   ]);
 
-  const allTransfers = mergeFetchedTransfers(JSON.parse(rawTransfersFrom), JSON.parse(rawTransfersTo));
+  const allTransfers = mergeFetchedTransfers(rawTransfersFrom, rawTransfersTo);
 
   if (!allTransfers.length) return [];
 
