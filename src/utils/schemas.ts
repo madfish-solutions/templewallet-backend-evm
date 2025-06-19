@@ -1,7 +1,7 @@
 import { isAddress } from '@ethersproject/address';
 import { object as objectSchema, string as stringSchema, number as numberSchema } from 'yup';
 
-export const addressSchema = stringSchema().test(
+const addressSchema = stringSchema().test(
   'is-valid-address',
   'Invalid address',
   value => value === undefined || isAddress(value)
