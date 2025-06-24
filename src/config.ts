@@ -14,6 +14,7 @@ function getEnvNat(key: string, fallback?: number): number | undefined {
 export const EnvVars = {
   REDIS_URL: getEnv('REDIS_URL'),
   COVALENT_API_KEY: getEnv('COVALENT_API_KEY'),
+  LIFI_API_KEY: getEnv('LIFI_API_KEY'),
   ALCHEMY_API_KEY: getEnv('ALCHEMY_API_KEY'),
   ADMIN_USERNAME: getEnv('ADMIN_USERNAME'),
   ADMIN_PASSWORD: getEnv('ADMIN_PASSWORD')
