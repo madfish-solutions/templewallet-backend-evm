@@ -74,14 +74,14 @@ async function getCovalentResponse(
       response = await client.BalanceService.getTokenBalancesForWalletAddress(
         data.chainId as ChainID,
         data.walletAddress,
-        { nft: true, noNftAssetMetadata: true, quoteCurrency: 'USD', noSpam: false }
+        { nft: true, noNftAssetMetadata: true, quoteCurrency: 'USD', noSpam: true }
       );
       break;
     case 'tokensMetadata':
       response = await client.BalanceService.getTokenBalancesForWalletAddress(
         data.chainId as ChainID,
         data.walletAddress,
-        { nft: false, quoteCurrency: 'USD', noSpam: false }
+        { nft: false, quoteCurrency: 'USD', noSpam: true }
       );
       break;
     default:
@@ -89,7 +89,7 @@ async function getCovalentResponse(
       const withUncached = Boolean(supportedChains && !supportedChains.includes(chainId));
       response = await client.NftService.getNftsForAddress(chainId as ChainID, walletAddress, {
         withUncached,
-        noSpam: false
+        noSpam: true
       });
       if (response.error) {
         const notSupportedChainErrorMatch = response.error_message?.match(NOT_SUPPORTED_CHAIN_ERROR_REGEX);
@@ -101,7 +101,7 @@ async function getCovalentResponse(
             .map(s => parseInt(s));
           response = await client.NftService.getNftsForAddress(chainId as ChainID, walletAddress, {
             withUncached: true,
-            noSpam: false
+            noSpam: true
           });
         }
       }
