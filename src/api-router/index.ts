@@ -13,6 +13,7 @@ import {
 
 import { fetchTransactions } from './alchemy';
 import { getEvmAccountActivity, getEvmBalances, getEvmCollectiblesMetadata, getEvmTokensMetadata } from './covalent';
+import { everstakeDashboardRequestsProxy, everstakeEthRequestsProxy, everstakeWalletRequestsProxy } from './everstake';
 import { getSwapConnectionsRoute, getSwapRoute, getSwapTokensMetadata } from './lifi';
 
 export const apiRouter = Router();
@@ -120,4 +121,7 @@ apiRouter
         res
       );
     })
-  );
+  )
+  .use('/everstake-wallet', everstakeWalletRequestsProxy)
+  .use('/everstake-dashboard', everstakeDashboardRequestsProxy)
+  .use('/everstake-eth-api', everstakeEthRequestsProxy);
