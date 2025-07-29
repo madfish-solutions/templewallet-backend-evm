@@ -33,6 +33,7 @@ export const swapRouteQuerySchema = objectSchema().shape({
   fromToken: nonEmptyStringSchema.clone().required('fromToken is undefined'),
   toToken: nonEmptyStringSchema.clone().required('toToken is undefined'),
   amount: nonEmptyStringSchema.clone().required('amount is undefined'),
+  amountForGas: nonEmptyStringSchema.clone(),
   fromAddress: nonEmptyStringSchema.clone().required('fromAddress is undefined'),
   slippage: nonEmptyStringSchema.clone().required('slippage is undefined')
 });
