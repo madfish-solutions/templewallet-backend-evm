@@ -13,7 +13,7 @@ import {
 
 import { fetchTransactions } from './alchemy';
 import { getEvmAccountActivity, getEvmBalances, getEvmCollectiblesMetadata, getEvmTokensMetadata } from './covalent';
-import { getSwapConnectionsRoute, getSwapRoute, getSwapTokensMetadata } from './lifi';
+import { getSwapChains, getSwapConnectionsRoute, getSwapRoute, getSwapTokensMetadata } from './lifi';
 
 export const apiRouter = Router();
 
@@ -47,7 +47,7 @@ apiRouter
   .get(
     '/swap-route',
     withCodedExceptionHandler(async (req, res) => {
-      const { fromChain, toChain, fromToken, toToken, amount, fromAddress, slippage } =
+      const { fromChain, toChain, fromToken, toToken, amount, amountForGas, fromAddress, slippage } =
         await swapRouteQuerySchema.validate(req.query);
 
       const data = await getSwapRoute({
@@ -56,9 +56,18 @@ apiRouter
         fromToken,
         toToken,
         amount,
+        amountForGas,
         fromAddress,
         slippage: Number(slippage)
       });
+
+      res.status(200).send(data);
+    })
+  )
+  .get(
+    '/swap-chains',
+    withCodedExceptionHandler(async (req, res) => {
+      const data = await getSwapChains();
 
       res.status(200).send(data);
     })

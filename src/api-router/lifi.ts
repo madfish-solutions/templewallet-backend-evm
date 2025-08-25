@@ -1,4 +1,13 @@
-import { convertQuoteToRoute, createConfig, getConnections, getQuote, getTokens } from '@lifi/sdk';
+import {
+  ChainType,
+  convertQuoteToRoute,
+  createConfig,
+  getChains,
+  getConnections,
+  getQuote,
+  getTokens,
+  Token
+} from '@lifi/sdk';
 import retry from 'async-retry';
 
 import { EnvVars } from '../config';
@@ -10,7 +19,7 @@ createConfig({
   routeOptions: {
     fee: 0.0035, // 0.35% + 0.25% lifi = 0.6%
     maxPriceImpact: 0.01, // 1%
-    order: 'CHEAPEST',
+    order: 'RECOMMENDED',
     allowSwitchChain: true,
     allowDestinationCall: true
   }
@@ -26,6 +35,7 @@ type SwapRouteParams = {
   amount: string;
   fromAddress: string;
   slippage: number;
+  amountForGas?: string;
 };
 
 type SwapConnectionParams = {
@@ -43,7 +53,9 @@ export const getSwapRoute = (params: SwapRouteParams) =>
         toToken: params.toToken,
         fromAmount: params.amount,
         fromAddress: params.fromAddress,
-        slippage: params.slippage
+        slippage: params.slippage,
+        fromAmountForGas: params.amountForGas,
+        skipSimulation: false
       });
 
       const route = convertQuoteToRoute(quote);
@@ -54,15 +66,38 @@ export const getSwapRoute = (params: SwapRouteParams) =>
     }
   }, RETRY_OPTIONS);
 
+export const getSwapChains = () =>
+  retry(async () => {
+    try {
+      const chainsMetadata = await getChains({ chainTypes: [ChainType.EVM] });
+
+      return chainsMetadata.map(chain => chain.id);
+    } catch (err: any) {
+      throw new CodedError(err?.statusCode || 500, err?.message || 'LiFi chains metadata error');
+    }
+  }, RETRY_OPTIONS);
+
 export const getSwapConnectionsRoute = (params: SwapConnectionParams) =>
   retry(async () => {
     try {
       const connectionsResponse = await getConnections({
         fromChain: params.fromChain,
-        fromToken: params.fromToken
+        fromToken: params.fromToken,
+        chainTypes: [ChainType.EVM]
       });
 
-      return connectionsResponse.connections[0].toTokens;
+      const result: Record<number, Token[]> = {};
+
+      for (const connection of connectionsResponse.connections) {
+        for (const token of connection.toTokens) {
+          if (!result[token.chainId]) {
+            result[token.chainId] = [];
+          }
+          result[token.chainId].push(token);
+        }
+      }
+
+      return result;
     } catch (err: any) {
       throw new CodedError(err?.statusCode || 500, err?.message || 'LiFi connections fetch error');
     }
