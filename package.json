@@ -20,7 +20,7 @@
     "@bull-board/express": "^6.9.2",
     "@covalenthq/client-sdk": "^2.2.5",
     "@ethersproject/address": "^5.8.0",
-    "@lifi/sdk": "^3.7.7",
+    "@lifi/sdk": "^3.11.4",
     "@types/lodash": "^4.17.16",
     "alchemy-sdk": "^3.5.8",
     "assert": "^2.1.0",
