@@ -176,10 +176,11 @@ const makePublicClient = memoizee(
 
     return createPublicClient({
       chain: ALCHEMY_VIEM_CHAINS[chainId],
-      transport: fallback([
-        ...ALCHEMY_VIEM_CHAINS[chainId].rpcUrls.default.http.map(rpcUrl => http(rpcUrl)),
-        http(`https://${ALCHEMY_CHAINS_NAMES[chainId]}.g.alchemy.com/v2/${EnvVars.ALCHEMY_API_KEY}`)
-      ])
+      transport: fallback(
+        ALCHEMY_VIEM_CHAINS[chainId].rpcUrls.default.http
+          .concat(`https://${ALCHEMY_CHAINS_NAMES[chainId]}.g.alchemy.com/v2/${EnvVars.ALCHEMY_API_KEY}`)
+          .map(rpcUrl => http(rpcUrl, { retryCount: 0 }))
+      )
     });
   },
   { max: Object.keys(ALCHEMY_VIEM_CHAINS).length }
