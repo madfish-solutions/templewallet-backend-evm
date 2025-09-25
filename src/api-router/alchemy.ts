@@ -9,10 +9,13 @@ import {
 } from 'alchemy-sdk';
 import { range, uniqBy, uniqueId } from 'lodash';
 import memoizee from 'memoizee';
+import { createPublicClient, fallback, http } from 'viem';
 
 import { ALCHEMY_ATTEMPTS, ALCHEMY_BACKOFF_DELAY, ALCHEMY_CONCURRENCY, ALCHEMY_CUPS, EnvVars } from '../config';
 import { CodedError } from '../utils/errors';
 import { createQueuedFetchJobs } from '../utils/queued-fetch-jobs';
+
+import { ALCHEMY_CHAINS_NAMES, ALCHEMY_VIEM_CHAINS } from './constants';
 
 const ETH_TOKEN_SLUG = 'eth' as const;
 const TR_PSEUDO_LIMIT = 50;
@@ -105,8 +108,22 @@ async function getAlchemyResponse(
     if (toAcc) reqOptions.toAddress = accAddress;
     else reqOptions.fromAddress = accAddress;
 
-    // Alchemy SDK processes Error 429 itself. See: https://docs.alchemy.com/reference/throughput#option-1-alchemy-sdk
-    return alchemy.core.getAssetTransfers(reqOptions).then(r => r.transfers);
+    const { transfers: rawTransfers } = await alchemy.core.getAssetTransfers(reqOptions);
+
+    return await Promise.all(
+      rawTransfers.map(async rawTransfer => {
+        if (rawTransfer.metadata) {
+          return rawTransfer;
+        }
+
+        return {
+          ...rawTransfer,
+          metadata: {
+            blockTimestamp: await getBlockTimestamp(data.chainId, rawTransfer.blockNum)
+          }
+        };
+      })
+    );
   }
 
   const { accAddress, contractAddress, toBlock, fromBlock } = data;
@@ -150,6 +167,39 @@ const { fetch, queue } = createQueuedFetchJobs<AlchemyQueueJobName, AlchemyQueue
 });
 
 export const alchemyRequestsQueue = queue;
+
+const makePublicClient = memoizee(
+  (chainId: number) => {
+    if (!(chainId in ALCHEMY_VIEM_CHAINS)) {
+      throw new Error(`Chain ${chainId} not supported`);
+    }
+
+    return createPublicClient({
+      chain: ALCHEMY_VIEM_CHAINS[chainId],
+      transport: fallback([
+        ...ALCHEMY_VIEM_CHAINS[chainId].rpcUrls.default.http.map(rpcUrl => http(rpcUrl)),
+        http(`https://${ALCHEMY_CHAINS_NAMES[chainId]}.g.alchemy.com/v2/${EnvVars.ALCHEMY_API_KEY}`)
+      ])
+    });
+  },
+  { max: Object.keys(ALCHEMY_VIEM_CHAINS).length }
+);
+
+export const getBlockTimestamp = memoizee(
+  async (chainId: number, blockNumber: string) => {
+    const publicClient = makePublicClient(chainId);
+
+    const { timestamp } = await publicClient.getBlock({
+      blockNumber: BigInt(blockNumber),
+      includeTransactions: false
+    });
+
+    if (!timestamp) throw new CodedError(500, 'Block timestamp not found');
+
+    return new Date(Number(timestamp) * 1000).toISOString();
+  },
+  { max: 1e6, length: 2, promise: true }
+);
 
 export async function fetchTransactions(
   chainId: number,
@@ -404,66 +454,9 @@ const EXCLUDED_INTERNAL_CATEGORY = new Set([
   Network.WORLDCHAIN_SEPOLIA
 ]);
 
-/** TODO: Verify this mapping */
-const CHAINS_NAMES: Record<number, Network> = {
-  1: Network.ETH_MAINNET,
-  5: Network.ETH_GOERLI,
-  10: Network.OPT_MAINNET,
-  30: Network.ROOTSTOCK_MAINNET,
-  31: Network.ROOTSTOCK_TESTNET,
-  56: Network.BNB_MAINNET,
-  97: Network.BNB_TESTNET,
-  100: Network.GNOSIS_MAINNET,
-  137: Network.MATIC_MAINNET,
-  204: Network.OPBNB_MAINNET,
-  250: Network.FANTOM_MAINNET,
-  300: Network.ZKSYNC_SEPOLIA,
-  324: Network.ZKSYNC_MAINNET,
-  360: Network.SHAPE_MAINNET,
-  420: Network.OPT_GOERLI,
-  480: Network.WORLDCHAIN_MAINNET,
-  592: Network.ASTAR_MAINNET,
-  1088: Network.METIS_MAINNET,
-  1101: Network.POLYGONZKEVM_MAINNET,
-  1442: Network.POLYGONZKEVM_TESTNET,
-  1946: Network.SONEIUM_MINATO,
-  2442: Network.POLYGONZKEVM_CARDONA,
-  4002: Network.FANTOM_TESTNET,
-  4801: Network.WORLDCHAIN_SEPOLIA,
-  5000: Network.MANTLE_MAINNET,
-  5003: Network.MANTLE_SEPOLIA,
-  5611: Network.OPBNB_TESTNET,
-  7000: Network.ZETACHAIN_MAINNET,
-  7001: Network.ZETACHAIN_TESTNET,
-  8453: Network.BASE_MAINNET,
-  10200: Network.GNOSIS_CHIADO,
-  11011: Network.SHAPE_SEPOLIA,
-  42161: Network.ARB_MAINNET,
-  42220: Network.CELO_MAINNET,
-  43113: Network.AVAX_FUJI,
-  43114: Network.AVAX_MAINNET,
-  42170: Network.ARBNOVA_MAINNET,
-  44787: Network.CELO_ALFAJORES,
-  59141: Network.LINEA_SEPOLIA,
-  59144: Network.LINEA_MAINNET,
-  80001: Network.MATIC_MUMBAI,
-  80002: Network.MATIC_AMOY,
-  80084: Network.BERACHAIN_BARTIO,
-  81457: Network.BLAST_MAINNET,
-  84531: Network.BASE_GOERLI,
-  84532: Network.BASE_SEPOLIA,
-  421613: Network.ARB_GOERLI,
-  421614: Network.ARB_SEPOLIA,
-  534351: Network.SCROLL_SEPOLIA,
-  534352: Network.SCROLL_MAINNET,
-  11155111: Network.ETH_SEPOLIA,
-  11155420: Network.OPT_SEPOLIA,
-  168587773: Network.BLAST_SEPOLIA
-};
-
 const getAlchemyClient = memoizee(
   (chainId: number) => {
-    const network = CHAINS_NAMES[chainId];
+    const network = ALCHEMY_CHAINS_NAMES[chainId];
 
     if (!network) throw new CodedError(422, 'Chain not supported');
 
