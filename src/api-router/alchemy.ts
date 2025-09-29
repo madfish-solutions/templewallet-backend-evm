@@ -176,10 +176,11 @@ const makePublicClient = memoizee(
 
     return createPublicClient({
       chain: ALCHEMY_VIEM_CHAINS[chainId],
+      // Default retries are necessary because some nodes may not return old blocks
       transport: fallback(
         ALCHEMY_VIEM_CHAINS[chainId].rpcUrls.default.http
           .concat(`https://${ALCHEMY_CHAINS_NAMES[chainId]}.g.alchemy.com/v2/${EnvVars.ALCHEMY_API_KEY}`)
-          .map(rpcUrl => http(rpcUrl, { retryCount: 0 }))
+          .map(rpcUrl => http(rpcUrl))
       )
     });
   },
