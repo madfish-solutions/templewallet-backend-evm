@@ -1,11 +1,16 @@
 import {
   ChainType,
+  ConnectionsRequest,
   convertQuoteToRoute,
   createConfig,
   getChains,
   getConnections,
   getQuote,
+  getRoutes,
   getTokens,
+  QuoteRequest,
+  RoutesRequest,
+  RoutesResponse,
   Token
 } from '@lifi/sdk';
 import retry from 'async-retry';
@@ -27,23 +32,27 @@ createConfig({
 
 const RETRY_OPTIONS: retry.Options = { maxRetryTime: 5_000 };
 
-type SwapRouteParams = {
-  fromChain: number;
-  toChain: number;
-  fromToken: string;
-  toToken: string;
-  amount: string;
-  fromAddress: string;
-  slippage: number;
-  amountForGas?: string;
-};
+export const getSwapAllRoutes = (params: RoutesRequest) =>
+  retry(async () => {
+    try {
+      const routesResponse: RoutesResponse = await getRoutes({
+        fromChainId: params.fromChainId,
+        fromAmount: params.fromAmount,
+        fromTokenAddress: params.fromTokenAddress,
+        fromAddress: params.fromAddress,
+        toChainId: params.toChainId,
+        toTokenAddress: params.toTokenAddress,
+        fromAmountForGas: params.fromAmountForGas,
+        options: params.options
+      });
 
-type SwapConnectionParams = {
-  fromChain: number;
-  fromToken: string;
-};
+      return routesResponse;
+    } catch (err: any) {
+      throw new CodedError(err?.statusCode || 500, err?.message || 'LiFi routes error');
+    }
+  }, RETRY_OPTIONS);
 
-export const getSwapRoute = (params: SwapRouteParams) =>
+export const getSwapRoute = (params: QuoteRequest) =>
   retry(async () => {
     try {
       const quote = await getQuote({
@@ -51,10 +60,10 @@ export const getSwapRoute = (params: SwapRouteParams) =>
         toChain: params.toChain,
         fromToken: params.fromToken,
         toToken: params.toToken,
-        fromAmount: params.amount,
+        fromAmount: params.fromAmount,
         fromAddress: params.fromAddress,
+        fromAmountForGas: params.fromAmountForGas,
         slippage: params.slippage,
-        fromAmountForGas: params.amountForGas,
         skipSimulation: false
       });
 
@@ -77,7 +86,7 @@ export const getSwapChains = () =>
     }
   }, RETRY_OPTIONS);
 
-export const getSwapConnectionsRoute = (params: SwapConnectionParams) =>
+export const getSwapConnectionsRoute = (params: ConnectionsRequest) =>
   retry(async () => {
     try {
       const connectionsResponse = await getConnections({

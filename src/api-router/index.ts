@@ -13,7 +13,7 @@ import {
 
 import { fetchTransactions } from './alchemy';
 import { getEvmAccountActivity, getEvmBalances, getEvmCollectiblesMetadata, getEvmTokensMetadata } from './covalent';
-import { getSwapChains, getSwapConnectionsRoute, getSwapRoute, getSwapTokensMetadata } from './lifi';
+import { getSwapAllRoutes, getSwapChains, getSwapConnectionsRoute, getSwapRoute, getSwapTokensMetadata } from './lifi';
 
 export const apiRouter = Router();
 
@@ -45,6 +45,28 @@ apiRouter
     })
   )
   .get(
+    '/swap-routes',
+    withCodedExceptionHandler(async (req, res) => {
+      const { fromChain, toChain, fromToken, toToken, amount, amountForGas, fromAddress, slippage } =
+        await swapRouteQuerySchema.validate(req.query);
+
+      const data = await getSwapAllRoutes({
+        fromChainId: Number(fromChain),
+        fromAmount: amount,
+        fromTokenAddress: fromToken,
+        fromAddress,
+        toChainId: Number(toChain),
+        toTokenAddress: toToken,
+        fromAmountForGas: amountForGas,
+        options: {
+          slippage: Number(slippage)
+        }
+      });
+
+      res.status(200).send(data);
+    })
+  )
+  .get(
     '/swap-route',
     withCodedExceptionHandler(async (req, res) => {
       const { fromChain, toChain, fromToken, toToken, amount, amountForGas, fromAddress, slippage } =
@@ -55,8 +77,8 @@ apiRouter
         toChain: Number(toChain),
         fromToken,
         toToken,
-        amount,
-        amountForGas,
+        fromAmount: amount,
+        fromAmountForGas: amountForGas,
         fromAddress,
         slippage: Number(slippage)
       });
