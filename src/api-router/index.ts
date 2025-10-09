@@ -13,7 +13,13 @@ import {
 
 import { fetchTransactions } from './alchemy';
 import { getEvmAccountActivity, getEvmBalances, getEvmCollectiblesMetadata, getEvmTokensMetadata } from './covalent';
-import { getSwapAllRoutes, getSwapChains, getSwapConnectionsRoute, getSwapRoute, getSwapTokensMetadata } from './lifi';
+import {
+  fetchAllSwapRoutes,
+  fetchSupportedSwapChainIds,
+  fetchConnectedDestinationTokens,
+  fetchSwapRouteFromQuote,
+  fetchTokensMetadataByChains
+} from './lifi';
 
 export const apiRouter = Router();
 
@@ -50,7 +56,7 @@ apiRouter
       const { fromChain, toChain, fromToken, toToken, amount, amountForGas, fromAddress, slippage } =
         await swapRouteQuerySchema.validate(req.query);
 
-      const data = await getSwapAllRoutes({
+      const data = await fetchAllSwapRoutes({
         fromChainId: Number(fromChain),
         fromAmount: amount,
         fromTokenAddress: fromToken,
@@ -72,7 +78,7 @@ apiRouter
       const { fromChain, toChain, fromToken, toToken, amount, amountForGas, fromAddress, slippage } =
         await swapRouteQuerySchema.validate(req.query);
 
-      const data = await getSwapRoute({
+      const data = await fetchSwapRouteFromQuote({
         fromChain: Number(fromChain),
         toChain: Number(toChain),
         fromToken,
@@ -89,7 +95,7 @@ apiRouter
   .get(
     '/swap-chains',
     withCodedExceptionHandler(async (req, res) => {
-      const data = await getSwapChains();
+      const data = await fetchSupportedSwapChainIds();
 
       res.status(200).send(data);
     })
@@ -101,7 +107,7 @@ apiRouter
 
       const numericChainIds = chainIds.split(',').map((id: string) => Number(id));
 
-      const data = await getSwapTokensMetadata(numericChainIds);
+      const data = await fetchTokensMetadataByChains(numericChainIds);
 
       res.status(200).send(data);
     })
@@ -111,7 +117,7 @@ apiRouter
     withCodedExceptionHandler(async (req, res) => {
       const { fromChain, fromToken } = await swapConnectionsQuerySchema.validate(req.query);
 
-      const data = await getSwapConnectionsRoute({ fromChain: Number(fromChain), fromToken });
+      const data = await fetchConnectedDestinationTokens({ fromChain: Number(fromChain), fromToken });
 
       res.status(200).send(data);
     })

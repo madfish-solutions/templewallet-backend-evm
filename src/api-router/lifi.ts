@@ -32,7 +32,7 @@ createConfig({
 
 const RETRY_OPTIONS: retry.Options = { maxRetryTime: 5_000 };
 
-export const getSwapAllRoutes = (params: RoutesRequest) =>
+export const fetchAllSwapRoutes = (params: RoutesRequest) =>
   retry(async () => {
     try {
       const routesResponse: RoutesResponse = await getRoutes({
@@ -52,7 +52,7 @@ export const getSwapAllRoutes = (params: RoutesRequest) =>
     }
   }, RETRY_OPTIONS);
 
-export const getSwapRoute = (params: QuoteRequest) =>
+export const fetchSwapRouteFromQuote = (params: QuoteRequest) =>
   retry(async () => {
     try {
       const quote = await getQuote({
@@ -75,7 +75,7 @@ export const getSwapRoute = (params: QuoteRequest) =>
     }
   }, RETRY_OPTIONS);
 
-export const getSwapChains = () =>
+export const fetchSupportedSwapChainIds = () =>
   retry(async () => {
     try {
       const chainsMetadata = await getChains({ chainTypes: [ChainType.EVM] });
@@ -86,7 +86,7 @@ export const getSwapChains = () =>
     }
   }, RETRY_OPTIONS);
 
-export const getSwapConnectionsRoute = (params: ConnectionsRequest) =>
+export const fetchConnectedDestinationTokens = (params: ConnectionsRequest) =>
   retry(async () => {
     try {
       const connectionsResponse = await getConnections({
@@ -112,7 +112,7 @@ export const getSwapConnectionsRoute = (params: ConnectionsRequest) =>
     }
   }, RETRY_OPTIONS);
 
-export const getSwapTokensMetadata = (chainIds: number[]) =>
+export const fetchTokensMetadataByChains = (chainIds: number[]) =>
   retry(async () => {
     try {
       const response = await getTokens({ chains: chainIds });
