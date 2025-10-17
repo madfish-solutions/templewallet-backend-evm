@@ -48,7 +48,7 @@ export const fetchAllSwapRoutes = (params: RoutesRequest) =>
 
       return routesResponse;
     } catch (err: any) {
-      throw new CodedError(err?.statusCode || 500, err?.message || 'LiFi routes error');
+      throw new CodedError(err?.cause?.status || 500, err?.message || 'LiFi routes error');
     }
   }, RETRY_OPTIONS);
 
@@ -71,7 +71,7 @@ export const fetchSwapRouteFromQuote = (params: QuoteRequest) =>
 
       return route;
     } catch (err: any) {
-      throw new CodedError(err?.statusCode || 500, err?.message || 'LiFi quote error');
+      throw new CodedError(err?.cause?.status || 500, err?.message || 'LiFi quote error');
     }
   }, RETRY_OPTIONS);
 
