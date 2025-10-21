@@ -8,7 +8,8 @@ import {
   evmQueryParamsTransactionsSchema,
   swapConnectionsQuerySchema,
   swapRouteQuerySchema,
-  swapTokensQuerySchema
+  swapTokensQuerySchema,
+  lifiStatusQuerySchema
 } from '../utils/schemas';
 
 import { fetchTransactions } from './alchemy';
@@ -18,7 +19,9 @@ import {
   fetchSupportedSwapChainIds,
   fetchConnectedDestinationTokens,
   fetchSwapRouteFromQuote,
-  fetchTokensMetadataByChains
+  fetchTokensMetadataByChains,
+  fetchStepTransaction,
+  fetchSwapStatus
 } from './lifi';
 
 export const apiRouter = Router();
@@ -118,6 +121,24 @@ apiRouter
       const { fromChain, fromToken } = await swapConnectionsQuerySchema.validate(req.query);
 
       const data = await fetchConnectedDestinationTokens({ fromChain: Number(fromChain), fromToken });
+
+      res.status(200).send(data);
+    })
+  )
+  .post(
+    '/swap-step-transaction',
+    withCodedExceptionHandler(async (req, res) => {
+      const data = await fetchStepTransaction(req.body);
+
+      res.status(200).send(data);
+    })
+  )
+  .get(
+    '/swap-status',
+    withCodedExceptionHandler(async (req, res) => {
+      const { txHash, bridge, fromChain, toChain } = await lifiStatusQuerySchema.validate(req.query);
+
+      const data = await fetchSwapStatus({ txHash, bridge, fromChain, toChain });
 
       res.status(200).send(data);
     })

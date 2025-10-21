@@ -7,10 +7,15 @@ import {
   getConnections,
   getQuote,
   getRoutes,
+  getStatus,
+  GetStatusRequest,
+  getStepTransaction,
   getTokens,
+  type LiFiStep,
   QuoteRequest,
   RoutesRequest,
   RoutesResponse,
+  type SignedLiFiStep,
   Token
 } from '@lifi/sdk';
 import retry from 'async-retry';
@@ -120,5 +125,23 @@ export const fetchTokensMetadataByChains = (chainIds: number[]) =>
       return response.tokens;
     } catch (err: any) {
       throw new CodedError(err?.statusCode || 500, err?.message || 'LiFi tokens fetch error');
+    }
+  }, RETRY_OPTIONS);
+
+export const fetchStepTransaction = (step: LiFiStep | SignedLiFiStep) =>
+  retry(async () => {
+    try {
+      return await getStepTransaction(step);
+    } catch (err: any) {
+      throw new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi step transaction error');
+    }
+  }, RETRY_OPTIONS);
+
+export const fetchSwapStatus = (params: GetStatusRequest) =>
+  retry(async () => {
+    try {
+      return await getStatus(params);
+    } catch (err: any) {
+      throw new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi tx status error');
     }
   }, RETRY_OPTIONS);
