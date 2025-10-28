@@ -52,3 +52,10 @@ export const swapTokensQuerySchema = objectSchema().shape({
       value => value !== undefined && value.split(',').length > 0
     )
 });
+
+export const lifiStatusQuerySchema = objectSchema().shape({
+  txHash: nonEmptyStringSchema.clone().required('txHash is undefined'),
+  bridge: nonEmptyStringSchema.clone(),
+  fromChain: nonEmptyStringSchema.clone(),
+  toChain: nonEmptyStringSchema.clone()
+});

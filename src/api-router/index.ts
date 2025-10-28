@@ -8,12 +8,21 @@ import {
   evmQueryParamsTransactionsSchema,
   swapConnectionsQuerySchema,
   swapRouteQuerySchema,
-  swapTokensQuerySchema
+  swapTokensQuerySchema,
+  lifiStatusQuerySchema
 } from '../utils/schemas';
 
 import { fetchTransactions } from './alchemy';
 import { getEvmAccountActivity, getEvmBalances, getEvmCollectiblesMetadata, getEvmTokensMetadata } from './covalent';
-import { getSwapChains, getSwapConnectionsRoute, getSwapRoute, getSwapTokensMetadata } from './lifi';
+import {
+  fetchAllSwapRoutes,
+  fetchSupportedSwapChainIds,
+  fetchConnectedDestinationTokens,
+  fetchSwapRouteFromQuote,
+  fetchTokensMetadataByChains,
+  fetchStepTransaction,
+  fetchSwapStatus
+} from './lifi';
 
 export const apiRouter = Router();
 
@@ -45,18 +54,40 @@ apiRouter
     })
   )
   .get(
+    '/swap-routes',
+    withCodedExceptionHandler(async (req, res) => {
+      const { fromChain, toChain, fromToken, toToken, amount, amountForGas, fromAddress, slippage } =
+        await swapRouteQuerySchema.validate(req.query);
+
+      const data = await fetchAllSwapRoutes({
+        fromChainId: Number(fromChain),
+        fromAmount: amount,
+        fromTokenAddress: fromToken,
+        fromAddress,
+        toChainId: Number(toChain),
+        toTokenAddress: toToken,
+        fromAmountForGas: amountForGas,
+        options: {
+          slippage: Number(slippage)
+        }
+      });
+
+      res.status(200).send(data);
+    })
+  )
+  .get(
     '/swap-route',
     withCodedExceptionHandler(async (req, res) => {
       const { fromChain, toChain, fromToken, toToken, amount, amountForGas, fromAddress, slippage } =
         await swapRouteQuerySchema.validate(req.query);
 
-      const data = await getSwapRoute({
+      const data = await fetchSwapRouteFromQuote({
         fromChain: Number(fromChain),
         toChain: Number(toChain),
         fromToken,
         toToken,
-        amount,
-        amountForGas,
+        fromAmount: amount,
+        fromAmountForGas: amountForGas,
         fromAddress,
         slippage: Number(slippage)
       });
@@ -67,7 +98,7 @@ apiRouter
   .get(
     '/swap-chains',
     withCodedExceptionHandler(async (req, res) => {
-      const data = await getSwapChains();
+      const data = await fetchSupportedSwapChainIds();
 
       res.status(200).send(data);
     })
@@ -79,7 +110,7 @@ apiRouter
 
       const numericChainIds = chainIds.split(',').map((id: string) => Number(id));
 
-      const data = await getSwapTokensMetadata(numericChainIds);
+      const data = await fetchTokensMetadataByChains(numericChainIds);
 
       res.status(200).send(data);
     })
@@ -89,7 +120,25 @@ apiRouter
     withCodedExceptionHandler(async (req, res) => {
       const { fromChain, fromToken } = await swapConnectionsQuerySchema.validate(req.query);
 
-      const data = await getSwapConnectionsRoute({ fromChain: Number(fromChain), fromToken });
+      const data = await fetchConnectedDestinationTokens({ fromChain: Number(fromChain), fromToken });
+
+      res.status(200).send(data);
+    })
+  )
+  .post(
+    '/swap-step-transaction',
+    withCodedExceptionHandler(async (req, res) => {
+      const data = await fetchStepTransaction(req.body);
+
+      res.status(200).send(data);
+    })
+  )
+  .get(
+    '/swap-status',
+    withCodedExceptionHandler(async (req, res) => {
+      const { txHash, bridge, fromChain, toChain } = await lifiStatusQuerySchema.validate(req.query);
+
+      const data = await fetchSwapStatus({ txHash, bridge, fromChain, toChain });
 
       res.status(200).send(data);
     })
