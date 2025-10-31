@@ -9,7 +9,7 @@ import {
 } from 'alchemy-sdk';
 import { range, uniqBy, uniqueId } from 'lodash';
 import memoizee from 'memoizee';
-import { createPublicClient, fallback, http } from 'viem';
+import { createPublicClient, fallback, GetBlockReturnType, http, PublicClient } from 'viem';
 
 import { ALCHEMY_ATTEMPTS, ALCHEMY_BACKOFF_DELAY, ALCHEMY_CONCURRENCY, ALCHEMY_CUPS, EnvVars } from '../config';
 import { CodedError } from '../utils/errors';
@@ -168,10 +168,12 @@ const { fetch, queue } = createQueuedFetchJobs<AlchemyQueueJobName, AlchemyQueue
 
 export const alchemyRequestsQueue = queue;
 
-const makePublicClient = memoizee(
+class ChainNotSupportedError extends Error {}
+
+const makeFallbackPublicClient = memoizee(
   (chainId: number) => {
     if (!(chainId in ALCHEMY_VIEM_CHAINS)) {
-      throw new Error(`Chain ${chainId} not supported`);
+      throw new ChainNotSupportedError(`Chain ${chainId} not supported`);
     }
 
     return createPublicClient({
@@ -180,8 +182,38 @@ const makePublicClient = memoizee(
       transport: fallback(
         ALCHEMY_VIEM_CHAINS[chainId].rpcUrls.default.http
           .concat(`https://${ALCHEMY_CHAINS_NAMES[chainId]}.g.alchemy.com/v2/${EnvVars.ALCHEMY_API_KEY}`)
-          .map(rpcUrl => http(rpcUrl))
+          .map(rpcUrl => http(rpcUrl, { retryCount: 0 }))
       )
+    });
+  },
+  { max: Object.keys(ALCHEMY_VIEM_CHAINS).length }
+);
+
+const makeFreeNodesPublicClients = memoizee(
+  (chainId: number): PublicClient[] => {
+    if (!(chainId in ALCHEMY_VIEM_CHAINS)) {
+      throw new ChainNotSupportedError(`Chain ${chainId} not supported`);
+    }
+
+    return ALCHEMY_VIEM_CHAINS[chainId].rpcUrls.default.http.map(rpcUrl =>
+      createPublicClient({
+        chain: ALCHEMY_VIEM_CHAINS[chainId],
+        transport: http(rpcUrl, { retryCount: 0 })
+      })
+    );
+  },
+  { max: Object.keys(ALCHEMY_VIEM_CHAINS).length }
+);
+
+const makeAlchemyRpcClient = memoizee(
+  (chainId: number) => {
+    if (!(chainId in ALCHEMY_VIEM_CHAINS)) {
+      throw new ChainNotSupportedError(`Chain ${chainId} not supported`);
+    }
+
+    return createPublicClient({
+      chain: ALCHEMY_VIEM_CHAINS[chainId],
+      transport: http(`https://${ALCHEMY_CHAINS_NAMES[chainId]}.g.alchemy.com/v2/${EnvVars.ALCHEMY_API_KEY}`)
     });
   },
   { max: Object.keys(ALCHEMY_VIEM_CHAINS).length }
@@ -189,12 +221,38 @@ const makePublicClient = memoizee(
 
 export const getBlockTimestamp = memoizee(
   async (chainId: number, blockNumber: string) => {
-    const publicClient = makePublicClient(chainId);
+    const fallbackPublicClient = makeFallbackPublicClient(chainId);
 
-    const { timestamp } = await publicClient.getBlock({
-      blockNumber: BigInt(blockNumber),
-      includeTransactions: false
-    });
+    let block: { timestamp?: string | bigint } & Record<string, unknown>;
+
+    try {
+      block = await fallbackPublicClient.getBlock({ blockNumber: BigInt(blockNumber), includeTransactions: false });
+    } catch (e) {
+      if (e instanceof ChainNotSupportedError) {
+        throw e;
+      }
+
+      const freeNodesResults = await Promise.allSettled(
+        makeFreeNodesPublicClients(chainId).map(client =>
+          Promise.race([
+            client.getBlock({ blockNumber: BigInt(blockNumber), includeTransactions: false }),
+            new Promise<GetBlockReturnType>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 5000))
+          ])
+        )
+      );
+      const resultWithTimestamp = freeNodesResults.find(
+        (result): result is PromiseFulfilledResult<GetBlockReturnType> =>
+          result.status === 'fulfilled' && Boolean(result.value.timestamp)
+      );
+
+      if (resultWithTimestamp) {
+        block = resultWithTimestamp.value;
+      } else {
+        const alchemyRpcClient = makeAlchemyRpcClient(chainId);
+        block = await alchemyRpcClient.getBlock({ blockNumber: BigInt(blockNumber), includeTransactions: false });
+      }
+    }
+    const { timestamp } = block;
 
     if (!timestamp) throw new CodedError(500, 'Block timestamp not found');
 
