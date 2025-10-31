@@ -1,11 +1,21 @@
 import {
   ChainType,
+  ConnectionsRequest,
   convertQuoteToRoute,
   createConfig,
   getChains,
   getConnections,
   getQuote,
+  getRoutes,
+  getStatus,
+  GetStatusRequest,
+  getStepTransaction,
   getTokens,
+  type LiFiStep,
+  QuoteRequest,
+  RoutesRequest,
+  RoutesResponse,
+  type SignedLiFiStep,
   Token
 } from '@lifi/sdk';
 import retry from 'async-retry';
@@ -27,23 +37,27 @@ createConfig({
 
 const RETRY_OPTIONS: retry.Options = { maxRetryTime: 5_000 };
 
-type SwapRouteParams = {
-  fromChain: number;
-  toChain: number;
-  fromToken: string;
-  toToken: string;
-  amount: string;
-  fromAddress: string;
-  slippage: number;
-  amountForGas?: string;
-};
+export const fetchAllSwapRoutes = (params: RoutesRequest) =>
+  retry(async () => {
+    try {
+      const routesResponse: RoutesResponse = await getRoutes({
+        fromChainId: params.fromChainId,
+        fromAmount: params.fromAmount,
+        fromTokenAddress: params.fromTokenAddress,
+        fromAddress: params.fromAddress,
+        toChainId: params.toChainId,
+        toTokenAddress: params.toTokenAddress,
+        fromAmountForGas: params.fromAmountForGas,
+        options: params.options
+      });
 
-type SwapConnectionParams = {
-  fromChain: number;
-  fromToken: string;
-};
+      return routesResponse;
+    } catch (err: any) {
+      throw new CodedError(err?.cause?.status || 500, err?.message || 'LiFi routes error');
+    }
+  }, RETRY_OPTIONS);
 
-export const getSwapRoute = (params: SwapRouteParams) =>
+export const fetchSwapRouteFromQuote = (params: QuoteRequest) =>
   retry(async () => {
     try {
       const quote = await getQuote({
@@ -51,10 +65,10 @@ export const getSwapRoute = (params: SwapRouteParams) =>
         toChain: params.toChain,
         fromToken: params.fromToken,
         toToken: params.toToken,
-        fromAmount: params.amount,
+        fromAmount: params.fromAmount,
         fromAddress: params.fromAddress,
+        fromAmountForGas: params.fromAmountForGas,
         slippage: params.slippage,
-        fromAmountForGas: params.amountForGas,
         skipSimulation: false
       });
 
@@ -62,11 +76,11 @@ export const getSwapRoute = (params: SwapRouteParams) =>
 
       return route;
     } catch (err: any) {
-      throw new CodedError(err?.statusCode || 500, err?.message || 'LiFi quote error');
+      throw new CodedError(err?.cause?.status || 500, err?.message || 'LiFi quote error');
     }
   }, RETRY_OPTIONS);
 
-export const getSwapChains = () =>
+export const fetchSupportedSwapChainIds = () =>
   retry(async () => {
     try {
       const chainsMetadata = await getChains({ chainTypes: [ChainType.EVM] });
@@ -77,7 +91,7 @@ export const getSwapChains = () =>
     }
   }, RETRY_OPTIONS);
 
-export const getSwapConnectionsRoute = (params: SwapConnectionParams) =>
+export const fetchConnectedDestinationTokens = (params: ConnectionsRequest) =>
   retry(async () => {
     try {
       const connectionsResponse = await getConnections({
@@ -103,7 +117,7 @@ export const getSwapConnectionsRoute = (params: SwapConnectionParams) =>
     }
   }, RETRY_OPTIONS);
 
-export const getSwapTokensMetadata = (chainIds: number[]) =>
+export const fetchTokensMetadataByChains = (chainIds: number[]) =>
   retry(async () => {
     try {
       const response = await getTokens({ chains: chainIds });
@@ -111,5 +125,23 @@ export const getSwapTokensMetadata = (chainIds: number[]) =>
       return response.tokens;
     } catch (err: any) {
       throw new CodedError(err?.statusCode || 500, err?.message || 'LiFi tokens fetch error');
+    }
+  }, RETRY_OPTIONS);
+
+export const fetchStepTransaction = (step: LiFiStep | SignedLiFiStep) =>
+  retry(async () => {
+    try {
+      return await getStepTransaction(step);
+    } catch (err: any) {
+      throw new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi step transaction error');
+    }
+  }, RETRY_OPTIONS);
+
+export const fetchSwapStatus = (params: GetStatusRequest) =>
+  retry(async () => {
+    try {
+      return await getStatus(params);
+    } catch (err: any) {
+      throw new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi tx status error');
     }
   }, RETRY_OPTIONS);
