@@ -12,6 +12,7 @@ import {
   lifiStatusQuerySchema
 } from '../utils/schemas';
 
+import { get3RouteEvmTokensWithPrices } from './3route-evm';
 import { fetchTransactions } from './alchemy';
 import { getEvmAccountActivity, getEvmBalances, getEvmCollectiblesMetadata, getEvmTokensMetadata } from './covalent';
 import {
@@ -178,4 +179,7 @@ apiRouter
         res
       );
     })
-  );
+  )
+  .get('/3route-tokens', async (_req, res) => {
+    sendData(await get3RouteEvmTokensWithPrices(), res);
+  });

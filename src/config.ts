@@ -17,7 +17,8 @@ export const EnvVars = {
   LIFI_API_KEY: getEnv('LIFI_API_KEY'),
   ALCHEMY_API_KEY: getEnv('ALCHEMY_API_KEY'),
   ADMIN_USERNAME: getEnv('ADMIN_USERNAME'),
-  ADMIN_PASSWORD: getEnv('ADMIN_PASSWORD')
+  ADMIN_PASSWORD: getEnv('ADMIN_PASSWORD'),
+  ROUTE3_EVM_API_KEY: getEnv('ROUTE3_EVM_API_KEY')
 };
 
 export const PORT = getEnvNat('PORT', 3000);
