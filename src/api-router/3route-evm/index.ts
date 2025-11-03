@@ -98,7 +98,7 @@ export const get3RouteEvmTokensWithPrices = memoizee(
     return Object.fromEntries(
       Object.entries(tokens).map(([address, token]) => [
         address,
-        { ...token, logoURI: token.logoURI || '', priceUSD: prices[address] }
+        { ...token, logoURI: token.logoURI || undefined, priceUSD: prices[address] }
       ])
     );
   },
