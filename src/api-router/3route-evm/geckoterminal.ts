@@ -1,9 +1,6 @@
 import axios from 'axios';
-import { RateLimiterRedis } from 'rate-limiter-flexible';
 
-import { redisClient } from '../../redis';
-
-import { withRateLimiter } from './utils';
+import { createRateLimiter, withRateLimiter } from './utils';
 
 /** These types are not complete, they're just a subset of the full response */
 interface GeckoterminalEntityBase {
@@ -12,7 +9,7 @@ interface GeckoterminalEntityBase {
   attributes: Record<string, unknown>;
 }
 
-export interface GeckoterminalToken extends GeckoterminalEntityBase {
+interface GeckoterminalToken extends GeckoterminalEntityBase {
   type: 'token';
   attributes: {
     address: string;
@@ -51,15 +48,9 @@ interface GeckoterminalPoolsPage {
   included: (GeckoterminalToken | GeckoterminalDex)[];
 }
 
-const geckoterminalApiLimiter = new RateLimiterRedis({
-  storeClient: redisClient,
-  keyPrefix: 'rl-geckoterminal-api',
-  points: 30,
-  duration: 60,
-  blockDuration: 2
-});
+const geckoterminalApiLimiter = createRateLimiter('rl-geckoterminal-api', 30, 60);
 
-export const getPoolsPage = withRateLimiter(geckoterminalApiLimiter, async (pageNumber: number) => {
+const getPoolsPage = withRateLimiter(geckoterminalApiLimiter, async (pageNumber: number) => {
   const { data } = await axios.get<GeckoterminalPoolsPage>(
     'https://api.geckoterminal.com/api/v2/networks/etherlink/pools',
     { params: { include: 'base_token,quote_token', page: pageNumber, sort: 'h24_volume_usd_desc' } }
@@ -67,3 +58,31 @@ export const getPoolsPage = withRateLimiter(geckoterminalApiLimiter, async (page
 
   return data;
 });
+
+export async function getGeckoterminalExchangeRates(tokensAddresses: string[]) {
+  const tokensAddressesSet = new Set(tokensAddresses);
+  const exchangeRates: Record<string, string> = {};
+  let responseWasEmpty = false;
+  let pageNumber = 1;
+  do {
+    const { data, included } = await getPoolsPage(pageNumber);
+    const includedEntitiesById = Object.fromEntries(included.map(entity => [entity.id, entity]));
+    responseWasEmpty = data.length === 0;
+    data.forEach(({ attributes, relationships }) => {
+      const { base_token_price_usd, quote_token_price_usd } = attributes;
+      const { base_token, quote_token } = relationships;
+      const tokensIds = [base_token.data.id, quote_token.data.id];
+      const prices = [base_token_price_usd, quote_token_price_usd];
+      tokensIds.forEach((tokenId, index) => {
+        const token = includedEntitiesById[tokenId] as GeckoterminalToken;
+        if (token && !exchangeRates[token.attributes.address]) {
+          exchangeRates[token.attributes.address] = prices[index];
+          tokensAddressesSet.delete(token.attributes.address);
+        }
+      });
+    });
+    pageNumber++;
+  } while (!responseWasEmpty && tokensAddressesSet.size > 0 && pageNumber <= 10);
+
+  return exchangeRates;
+}

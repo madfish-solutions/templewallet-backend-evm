@@ -1,10 +1,49 @@
+import { getAddress } from '@ethersproject/address';
 import axios from 'axios';
+import Big from 'big.js';
 import memoizee from 'memoizee';
 
 import { EnvVars } from '../../config';
 
-import { getTokensPage, getXtzPrice, PageParams } from './etherlink';
-import { GeckoterminalToken, getPoolsPage } from './geckoterminal';
+import { getEtherlinkExchangeRates, getXtzPrice } from './etherlink';
+import { getGeckoterminalExchangeRates } from './geckoterminal';
+import { createRateLimiter, withRateLimiter } from './utils';
+
+interface Route3EvmSwapRequest {
+  fee?: number;
+  referrer?: string;
+  amount: number;
+  slippage: number;
+  src: string;
+  dst: string;
+  from: string;
+}
+
+interface Route3EvmSwapFragment {
+  token: string;
+  hops: Route3EvmHop[];
+}
+
+interface Route3EvmSwapProtocolEntry {
+  name: string;
+  part: number;
+}
+
+interface Route3EvmHop {
+  part: number;
+  dst: string;
+  fromTokenId: number;
+  toTokenId: number;
+  protocols: Route3EvmSwapProtocolEntry[];
+}
+
+interface Route3EvmSwapResponse {
+  tx: Record<'from' | 'to' | 'data' | 'value' | 'gas' | 'gasPrice', string>;
+  dstAmount: string;
+  srcAmount: string;
+  gas: number;
+  protocols: Route3EvmSwapFragment[];
+}
 
 interface Route3EvmTokens {
   tokens: Record<
@@ -21,55 +60,7 @@ interface Route3EvmTokens {
 
 const xtzAddress = '0x0000000000000000000000000000000000000000';
 
-async function getEtherlinkExchangeRates(tokensAddresses: string[]) {
-  const tokensAddressesSet = new Set(tokensAddresses);
-  const exchangeRates: Record<string, string> = {};
-  let pageParams: PageParams | null = null;
-  do {
-    const { next_page_params, items } = await getTokensPage(pageParams);
-    pageParams = next_page_params;
-    items.forEach(item => {
-      if (tokensAddressesSet.has(item.address_hash.toLowerCase())) {
-        if (item.exchange_rate != null) {
-          exchangeRates[item.address_hash.toLowerCase()] = item.exchange_rate;
-        }
-        tokensAddressesSet.delete(item.address_hash.toLowerCase());
-      }
-    });
-  } while (pageParams != null && tokensAddressesSet.size > 0);
-
-  return exchangeRates;
-}
-
-async function getGeckoterminalExchangeRates(tokensAddresses: string[]) {
-  const tokensAddressesSet = new Set(tokensAddresses);
-  const exchangeRates: Record<string, string> = {};
-  let responseWasEmpty = false;
-  let pageNumber = 1;
-  do {
-    const { data, included } = await getPoolsPage(pageNumber);
-    const includedEntitiesById = Object.fromEntries(included.map(entity => [entity.id, entity]));
-    responseWasEmpty = data.length === 0;
-    data.forEach(({ attributes, relationships }) => {
-      const { base_token_price_usd, quote_token_price_usd } = attributes;
-      const { base_token, quote_token } = relationships;
-      const tokensIds = [base_token.data.id, quote_token.data.id];
-      const prices = [base_token_price_usd, quote_token_price_usd];
-      tokensIds.forEach((tokenId, index) => {
-        const token = includedEntitiesById[tokenId] as GeckoterminalToken;
-        if (token && !exchangeRates[token.attributes.address]) {
-          exchangeRates[token.attributes.address] = prices[index];
-          tokensAddressesSet.delete(token.attributes.address);
-        }
-      });
-    });
-    pageNumber++;
-  } while (!responseWasEmpty && tokensAddressesSet.size > 0 && pageNumber <= 10);
-
-  return exchangeRates;
-}
-
-async function get3RouteEvmTokenPrices(tokens: Route3EvmTokens['tokens']) {
+async function get3RouteEvmTokenPrices(tokens: Route3EvmTokens['tokens']): Promise<Record<string, string>> {
   const tokensAddresses = Object.keys(tokens).filter(address => address !== xtzAddress);
 
   const [xtzPrice, etherlinkExchangeRates, geckoterminalExchangeRates] = await Promise.all([
@@ -85,22 +76,68 @@ async function get3RouteEvmTokenPrices(tokens: Route3EvmTokens['tokens']) {
   };
 }
 
+const route3Api = axios.create({
+  baseURL: 'https://temple-evm.3route.io',
+  headers: { Authorization: `Bearer ${EnvVars.ROUTE3_EVM_API_KEY}` }
+});
+
+const route3ApiRateLimiter = createRateLimiter('rl-route3-api', 10, 1);
+
+const fetchRawEvmTokens = withRateLimiter(route3ApiRateLimiter, async () => {
+  const { data } = await route3Api.get<Route3EvmTokens>('/api/v6.1/42793/tokens');
+
+  return data;
+});
+
 export const get3RouteEvmTokensWithPrices = memoizee(
   async () => {
-    const tokensResponse = await axios.get<Route3EvmTokens>('https://temple-evm.3route.io/api/v6.1/42793/tokens', {
-      headers: { Authorization: `Bearer ${EnvVars.ROUTE3_EVM_API_KEY}` }
-    });
-
-    const { tokens } = tokensResponse.data;
+    const { tokens } = await fetchRawEvmTokens();
 
     const prices = await get3RouteEvmTokenPrices(tokens);
 
     return Object.fromEntries(
       Object.entries(tokens).map(([address, token]) => [
-        address,
-        { ...token, logoURI: token.logoURI || undefined, priceUSD: prices[address] }
+        getAddress(address),
+        { ...token, address: getAddress(token.address), logoURI: token.logoURI || undefined, priceUSD: prices[address] }
       ])
     );
   },
   { promise: true, maxAge: 20000 }
 );
+
+const fetchRawEvmSwap = withRateLimiter(route3ApiRateLimiter, async (params: Route3EvmSwapRequest) => {
+  const { data } = await route3Api.get<Route3EvmSwapResponse>('/api/v6.1/42793/swap', {
+    params: { ...params, includeProtocols: true }
+  });
+
+  return data;
+});
+
+const getAmountUSD = (amount: string, decimals: number, priceUSD: string | undefined) =>
+  priceUSD ? new Big(amount).div(new Big(10).pow(decimals)).mul(priceUSD).round(2, Big.roundDown).toFixed() : '0.00';
+
+export const get3RouteEvmSwap = withRateLimiter(route3ApiRateLimiter, async (params: Route3EvmSwapRequest) => {
+  const [{ srcAmount, dstAmount, tx, protocols }, tokensWithPrices] = await Promise.all([
+    fetchRawEvmSwap(params),
+    get3RouteEvmTokensWithPrices()
+  ]);
+  const { to: txDestination, data, gas, gasPrice } = tx;
+  const fromToken = tokensWithPrices[getAddress(params.src)];
+  const toToken = tokensWithPrices[getAddress(params.dst)];
+
+  return {
+    fromAmount: srcAmount,
+    fromAmountUSD: getAmountUSD(srcAmount, fromToken.decimals, fromToken.priceUSD),
+    toAmount: dstAmount,
+    toAmountUSD: getAmountUSD(dstAmount, toToken.decimals, toToken.priceUSD),
+    fromAddress: params.from,
+    txDestination,
+    txData: data,
+    gas,
+    gasPrice,
+    toAmountMin: new Big(dstAmount).mul(new Big(100).minus(params.slippage)).div(100).round(0, Big.roundDown).toFixed(),
+    fromToken,
+    toToken,
+    stepsCount: protocols.reduce((sum, { hops }) => sum + hops.length, 0)
+  };
+});

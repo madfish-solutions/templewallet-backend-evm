@@ -1,5 +1,7 @@
 import { RateLimiterRedis } from 'rate-limiter-flexible';
 
+import { redisClient } from '../../redis';
+
 export const withRateLimiter = <A extends unknown[], R>(limiter: RateLimiterRedis, fn: (...args: A) => Promise<R>) => {
   return async (...args: A) => {
     let consumed = false;
@@ -15,3 +17,12 @@ export const withRateLimiter = <A extends unknown[], R>(limiter: RateLimiterRedi
     return fn(...args);
   };
 };
+
+export const createRateLimiter = (keyPrefix: string, points: number, duration: number) =>
+  new RateLimiterRedis({
+    storeClient: redisClient,
+    keyPrefix,
+    points,
+    duration,
+    blockDuration: Math.max(Math.ceil(duration / points), 1)
+  });
