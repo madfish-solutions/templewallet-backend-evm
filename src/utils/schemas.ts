@@ -59,3 +59,13 @@ export const lifiStatusQuerySchema = objectSchema().shape({
   fromChain: nonEmptyStringSchema.clone(),
   toChain: nonEmptyStringSchema.clone()
 });
+
+export const route3SwapQuerySchema = objectSchema().shape({
+  src: addressSchema.clone().required('Source token address is required'),
+  dst: addressSchema.clone().required('Destination token address is required'),
+  amount: naturalNumberSchema.clone().required('Amount is required'),
+  from: addressSchema.clone().required('Sender address is required'),
+  slippage: numberSchema().min(0).max(50).required('Slippage is required'),
+  referrer: addressSchema,
+  fee: numberSchema().min(0).max(3)
+});
