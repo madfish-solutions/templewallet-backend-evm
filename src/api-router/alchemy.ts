@@ -261,6 +261,13 @@ const getBlockTimestamp = memoizee(
   { max: 1e6, length: 2, promise: true }
 );
 
+export async function fetchLastTransferTimestamp(chainId: number, accAddress: string): Promise<string | undefined> {
+  const txReqId = uniqueId('txReqId-');
+  const transfers = await fetchTransfers(txReqId, chainId, accAddress);
+
+  return transfers[0]?.metadata.blockTimestamp;
+}
+
 export async function fetchTransactions(
   chainId: number,
   accAddress: string,

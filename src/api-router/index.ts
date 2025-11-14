@@ -14,7 +14,7 @@ import {
 } from '../utils/schemas';
 
 import { get3RouteEvmSwap, get3RouteEvmTokensWithPrices } from './3route-evm';
-import { fetchTransactions } from './alchemy';
+import { fetchLastTransferTimestamp, fetchTransactions } from './alchemy';
 import { getEvmAccountActivity, getEvmBalances, getEvmCollectiblesMetadata, getEvmTokensMetadata } from './covalent';
 import {
   fetchAllSwapRoutes,
@@ -160,7 +160,17 @@ apiRouter
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress } = await evmMultichainQueryParamsSchema.validate(req.query);
       const { items: activityItems } = await getEvmAccountActivity(walletAddress);
-      res.status(200).json({ isInitialized: (activityItems ?? []).length > 0 });
+
+      if ((activityItems ?? []).length > 0) {
+        res.status(200).json({ isInitialized: true });
+
+        return;
+      }
+
+      const rootstockNetsLastTransferTimestamps = await Promise.all(
+        [30, 31].map(chainId => fetchLastTransferTimestamp(chainId, walletAddress))
+      );
+      res.status(200).json({ isInitialized: rootstockNetsLastTransferTimestamps.some(Boolean) });
     })
   )
   .get(
