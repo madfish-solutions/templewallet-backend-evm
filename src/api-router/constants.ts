@@ -112,7 +112,6 @@ export const ALCHEMY_CHAINS_NAMES: Record<number, Network> = {
   168587773: Network.BLAST_SEPOLIA
 };
 
-// Patch these viem chains with the URLs above
 export const ALCHEMY_VIEM_CHAINS = {
   1: {
     ...mainnet,
