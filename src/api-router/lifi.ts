@@ -1,4 +1,23 @@
-import { convertQuoteToRoute, createConfig, getConnections, getQuote, getTokens } from '@lifi/sdk';
+import {
+  ChainType,
+  ConnectionsRequest,
+  convertQuoteToRoute,
+  createConfig,
+  getChains,
+  getConnections,
+  getQuote,
+  getRoutes,
+  getStatus,
+  GetStatusRequest,
+  getStepTransaction,
+  getTokens,
+  type LiFiStep,
+  QuoteRequest,
+  RoutesRequest,
+  RoutesResponse,
+  type SignedLiFiStep,
+  Token
+} from '@lifi/sdk';
 import retry from 'async-retry';
 
 import { EnvVars } from '../config';
@@ -10,7 +29,7 @@ createConfig({
   routeOptions: {
     fee: 0.0035, // 0.35% + 0.25% lifi = 0.6%
     maxPriceImpact: 0.01, // 1%
-    order: 'CHEAPEST',
+    order: 'RECOMMENDED',
     allowSwitchChain: true,
     allowDestinationCall: true
   }
@@ -18,22 +37,27 @@ createConfig({
 
 const RETRY_OPTIONS: retry.Options = { maxRetryTime: 5_000 };
 
-type SwapRouteParams = {
-  fromChain: number;
-  toChain: number;
-  fromToken: string;
-  toToken: string;
-  amount: string;
-  fromAddress: string;
-  slippage: number;
-};
+export const fetchAllSwapRoutes = (params: RoutesRequest) =>
+  retry(async () => {
+    try {
+      const routesResponse: RoutesResponse = await getRoutes({
+        fromChainId: params.fromChainId,
+        fromAmount: params.fromAmount,
+        fromTokenAddress: params.fromTokenAddress,
+        fromAddress: params.fromAddress,
+        toChainId: params.toChainId,
+        toTokenAddress: params.toTokenAddress,
+        fromAmountForGas: params.fromAmountForGas,
+        options: params.options
+      });
 
-type SwapConnectionParams = {
-  fromChain: number;
-  fromToken: string;
-};
+      return routesResponse;
+    } catch (err: any) {
+      throw new CodedError(err?.cause?.status || 500, err?.message || 'LiFi routes error');
+    }
+  }, RETRY_OPTIONS);
 
-export const getSwapRoute = (params: SwapRouteParams) =>
+export const fetchSwapRouteFromQuote = (params: QuoteRequest) =>
   retry(async () => {
     try {
       const quote = await getQuote({
@@ -41,34 +65,59 @@ export const getSwapRoute = (params: SwapRouteParams) =>
         toChain: params.toChain,
         fromToken: params.fromToken,
         toToken: params.toToken,
-        fromAmount: params.amount,
+        fromAmount: params.fromAmount,
         fromAddress: params.fromAddress,
-        slippage: params.slippage
+        fromAmountForGas: params.fromAmountForGas,
+        slippage: params.slippage,
+        skipSimulation: false
       });
 
       const route = convertQuoteToRoute(quote);
 
       return route;
     } catch (err: any) {
-      throw new CodedError(err?.statusCode || 500, err?.message || 'LiFi quote error');
+      throw new CodedError(err?.cause?.status || 500, err?.message || 'LiFi quote error');
     }
   }, RETRY_OPTIONS);
 
-export const getSwapConnectionsRoute = (params: SwapConnectionParams) =>
+export const fetchSupportedSwapChainIds = () =>
+  retry(async () => {
+    try {
+      const chainsMetadata = await getChains({ chainTypes: [ChainType.EVM] });
+
+      return chainsMetadata.map(chain => chain.id);
+    } catch (err: any) {
+      throw new CodedError(err?.statusCode || 500, err?.message || 'LiFi chains metadata error');
+    }
+  }, RETRY_OPTIONS);
+
+export const fetchConnectedDestinationTokens = (params: ConnectionsRequest) =>
   retry(async () => {
     try {
       const connectionsResponse = await getConnections({
         fromChain: params.fromChain,
-        fromToken: params.fromToken
+        fromToken: params.fromToken,
+        chainTypes: [ChainType.EVM]
       });
 
-      return connectionsResponse.connections[0].toTokens;
+      const result: Record<number, Token[]> = {};
+
+      for (const connection of connectionsResponse.connections) {
+        for (const token of connection.toTokens) {
+          if (!result[token.chainId]) {
+            result[token.chainId] = [];
+          }
+          result[token.chainId].push(token);
+        }
+      }
+
+      return result;
     } catch (err: any) {
       throw new CodedError(err?.statusCode || 500, err?.message || 'LiFi connections fetch error');
     }
   }, RETRY_OPTIONS);
 
-export const getSwapTokensMetadata = (chainIds: number[]) =>
+export const fetchTokensMetadataByChains = (chainIds: number[]) =>
   retry(async () => {
     try {
       const response = await getTokens({ chains: chainIds });
@@ -76,5 +125,23 @@ export const getSwapTokensMetadata = (chainIds: number[]) =>
       return response.tokens;
     } catch (err: any) {
       throw new CodedError(err?.statusCode || 500, err?.message || 'LiFi tokens fetch error');
+    }
+  }, RETRY_OPTIONS);
+
+export const fetchStepTransaction = (step: LiFiStep | SignedLiFiStep) =>
+  retry(async () => {
+    try {
+      return await getStepTransaction(step);
+    } catch (err: any) {
+      throw new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi step transaction error');
+    }
+  }, RETRY_OPTIONS);
+
+export const fetchSwapStatus = (params: GetStatusRequest) =>
+  retry(async () => {
+    try {
+      return await getStatus(params);
+    } catch (err: any) {
+      throw new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi tx status error');
     }
   }, RETRY_OPTIONS);

@@ -33,6 +33,7 @@ export const swapRouteQuerySchema = objectSchema().shape({
   fromToken: nonEmptyStringSchema.clone().required('fromToken is undefined'),
   toToken: nonEmptyStringSchema.clone().required('toToken is undefined'),
   amount: nonEmptyStringSchema.clone().required('amount is undefined'),
+  amountForGas: nonEmptyStringSchema.clone(),
   fromAddress: nonEmptyStringSchema.clone().required('fromAddress is undefined'),
   slippage: nonEmptyStringSchema.clone().required('slippage is undefined')
 });
@@ -50,4 +51,11 @@ export const swapTokensQuerySchema = objectSchema().shape({
       'At least one chainId is required',
       value => value !== undefined && value.split(',').length > 0
     )
+});
+
+export const lifiStatusQuerySchema = objectSchema().shape({
+  txHash: nonEmptyStringSchema.clone().required('txHash is undefined'),
+  bridge: nonEmptyStringSchema.clone(),
+  fromChain: nonEmptyStringSchema.clone(),
+  toChain: nonEmptyStringSchema.clone()
 });
