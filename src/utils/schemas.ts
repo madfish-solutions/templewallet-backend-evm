@@ -44,13 +44,13 @@ export const swapConnectionsQuerySchema = objectSchema().shape({
 });
 
 export const swapTokensQuerySchema = objectSchema().shape({
-  chainIds: stringSchema()
-    .required('chainIds is required')
-    .test(
-      'is-valid-chain-ids',
-      'At least one chainId is required',
-      value => value !== undefined && value.split(',').length > 0
-    )
+  chainIds: stringSchema().test('is-valid-chain-ids', 'must be valid comma-separated list of chain IDs', value => {
+    if (value === undefined) {
+      return true;
+    }
+
+    return value.split(',').every(id => naturalNumberSchema.isValidSync(id));
+  })
 });
 
 export const lifiStatusQuerySchema = objectSchema().shape({
