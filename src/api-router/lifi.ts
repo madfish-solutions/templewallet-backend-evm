@@ -19,6 +19,7 @@ import {
   Token
 } from '@lifi/sdk';
 import retry from 'async-retry';
+import memoizee from 'memoizee';
 
 import { EnvVars } from '../config';
 import { CodedError } from '../utils/errors';
@@ -37,111 +38,118 @@ createConfig({
 
 const RETRY_OPTIONS: retry.Options = { maxRetryTime: 5_000 };
 
-export const fetchAllSwapRoutes = (params: RoutesRequest) =>
-  retry(async () => {
-    try {
-      const routesResponse: RoutesResponse = await getRoutes({
-        fromChainId: params.fromChainId,
-        fromAmount: params.fromAmount,
-        fromTokenAddress: params.fromTokenAddress,
-        fromAddress: params.fromAddress,
-        toChainId: params.toChainId,
-        toTokenAddress: params.toTokenAddress,
-        fromAmountForGas: params.fromAmountForGas,
-        options: params.options
-      });
+const withRetry =
+  <T extends unknown[], U>(fn: (...args: T) => Promise<U>, transformError: (error: any) => CodedError) =>
+  (...args: T) =>
+    retry(async () => {
+      try {
+        return await fn(...args);
+      } catch (err: any) {
+        throw transformError(err);
+      }
+    }, RETRY_OPTIONS);
 
-      return routesResponse;
-    } catch (err: any) {
-      throw new CodedError(err?.cause?.status || 500, err?.message || 'LiFi routes error');
-    }
-  }, RETRY_OPTIONS);
+const withMemoizee = <T extends (...args: any[]) => Promise<unknown>>(fn: T, options: memoizee.Options<T> = {}) =>
+  memoizee(fn, { promise: true, maxAge: 300_000, ...options });
 
-export const fetchSwapRouteFromQuote = (params: QuoteRequest) =>
-  retry(async () => {
-    try {
-      const quote = await getQuote({
-        fromChain: params.fromChain,
-        toChain: params.toChain,
-        fromToken: params.fromToken,
-        toToken: params.toToken,
-        fromAmount: params.fromAmount,
-        fromAddress: params.fromAddress,
-        fromAmountForGas: params.fromAmountForGas,
-        slippage: params.slippage,
-        skipSimulation: false
-      });
+export const fetchAllSwapRoutes = withRetry(
+  async (params: RoutesRequest) => {
+    const routesResponse: RoutesResponse = await getRoutes({
+      fromChainId: params.fromChainId,
+      fromAmount: params.fromAmount,
+      fromTokenAddress: params.fromTokenAddress,
+      fromAddress: params.fromAddress,
+      toChainId: params.toChainId,
+      toTokenAddress: params.toTokenAddress,
+      fromAmountForGas: params.fromAmountForGas,
+      options: params.options
+    });
 
-      const route = convertQuoteToRoute(quote);
+    return routesResponse;
+  },
+  err => new CodedError(err?.cause?.status || 500, err?.message || 'LiFi routes error')
+);
 
-      return route;
-    } catch (err: any) {
-      throw new CodedError(err?.cause?.status || 500, err?.message || 'LiFi quote error');
-    }
-  }, RETRY_OPTIONS);
+export const fetchSwapRouteFromQuote = withRetry(
+  async (params: QuoteRequest) => {
+    const quote = await getQuote({
+      fromChain: params.fromChain,
+      toChain: params.toChain,
+      fromToken: params.fromToken,
+      toToken: params.toToken,
+      fromAmount: params.fromAmount,
+      fromAddress: params.fromAddress,
+      fromAmountForGas: params.fromAmountForGas,
+      slippage: params.slippage,
+      skipSimulation: false
+    });
 
-export const fetchSupportedSwapChainIds = () =>
-  retry(async () => {
-    try {
+    return convertQuoteToRoute(quote);
+  },
+  err => new CodedError(err?.cause?.status || 500, err?.message || 'LiFi quote error')
+);
+
+export const fetchSupportedSwapChainIds = withMemoizee(
+  withRetry(
+    async () => {
       const chainsMetadata = await getChains({ chainTypes: [ChainType.EVM] });
 
       return chainsMetadata.map(chain => chain.id);
-    } catch (err: any) {
-      throw new CodedError(err?.statusCode || 500, err?.message || 'LiFi chains metadata error');
-    }
-  }, RETRY_OPTIONS);
+    },
+    err => new CodedError(err?.statusCode || 500, err?.message || 'LiFi chains metadata error')
+  )
+);
 
-export const fetchConnectedDestinationTokens = (params: ConnectionsRequest) =>
-  retry(async () => {
-    try {
-      const connectionsResponse = await getConnections({
-        fromChain: params.fromChain,
-        fromToken: params.fromToken,
-        chainTypes: [ChainType.EVM]
-      });
+export const fetchConnectedDestinationTokens = withRetry(
+  async (params: ConnectionsRequest) => {
+    const connectionsResponse = await getConnections({
+      fromChain: params.fromChain,
+      fromToken: params.fromToken,
+      chainTypes: [ChainType.EVM]
+    });
 
-      const result: Record<number, Token[]> = {};
+    const result: Record<number, Token[]> = {};
 
-      for (const connection of connectionsResponse.connections) {
-        for (const token of connection.toTokens) {
-          if (!result[token.chainId]) {
-            result[token.chainId] = [];
-          }
-          result[token.chainId].push(token);
+    for (const connection of connectionsResponse.connections) {
+      for (const token of connection.toTokens) {
+        if (!result[token.chainId]) {
+          result[token.chainId] = [];
         }
+        result[token.chainId].push(token);
       }
-
-      return result;
-    } catch (err: any) {
-      throw new CodedError(err?.statusCode || 500, err?.message || 'LiFi connections fetch error');
     }
-  }, RETRY_OPTIONS);
 
-export const fetchTokensMetadataByChains = (chainIds: number[]) =>
-  retry(async () => {
-    try {
-      const response = await getTokens({ chains: chainIds });
+    return result;
+  },
+  err => new CodedError(err?.statusCode || 500, err?.message || 'LiFi connections fetch error')
+);
+
+const fetchEvmTokensMetadata = withMemoizee(
+  withRetry(
+    async () => {
+      const response = await getTokens({ chainTypes: [ChainType.EVM] });
 
       return response.tokens;
-    } catch (err: any) {
-      throw new CodedError(err?.statusCode || 500, err?.message || 'LiFi tokens fetch error');
-    }
-  }, RETRY_OPTIONS);
+    },
+    err => new CodedError(err?.statusCode || 500, err?.message || 'LiFi tokens fetch error')
+  )
+);
 
-export const fetchStepTransaction = (step: LiFiStep | SignedLiFiStep) =>
-  retry(async () => {
-    try {
-      return await getStepTransaction(step);
-    } catch (err: any) {
-      throw new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi step transaction error');
-    }
-  }, RETRY_OPTIONS);
+export const fetchTokensMetadataByChains = withMemoizee(
+  async (chainIds?: number[]) => {
+    const allTokens = await fetchEvmTokensMetadata();
 
-export const fetchSwapStatus = (params: GetStatusRequest) =>
-  retry(async () => {
-    try {
-      return await getStatus(params);
-    } catch (err: any) {
-      throw new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi tx status error');
-    }
-  }, RETRY_OPTIONS);
+    return chainIds ? Object.fromEntries(chainIds.map(chainId => [chainId, allTokens[chainId] ?? []])) : allTokens;
+  },
+  { normalizer: args => args[0]?.join(',') ?? '', max: 1_000 }
+);
+
+export const fetchStepTransaction = withRetry(
+  (step: LiFiStep | SignedLiFiStep) => getStepTransaction(step),
+  err => new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi step transaction error')
+);
+
+export const fetchSwapStatus = withRetry(
+  (params: GetStatusRequest) => getStatus(params),
+  err => new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi tx status error')
+);
