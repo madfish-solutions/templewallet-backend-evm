@@ -110,7 +110,7 @@ apiRouter
     withCodedExceptionHandler(async (req, res) => {
       const { chainIds } = await swapTokensQuerySchema.validate(req.query);
 
-      const numericChainIds = chainIds.split(',').map((id: string) => Number(id));
+      const numericChainIds = chainIds?.split(',').map((id: string) => Number(id));
 
       const data = await fetchTokensMetadataByChains(numericChainIds);
 
