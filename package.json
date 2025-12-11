@@ -46,9 +46,10 @@
   },
   "devDependencies": {
     "@types/async-retry": "^1.4.9",
+    "@types/big.js": "^6.2.2",
     "@types/express": "^5.0.1",
-    "@types/mocha": "^10.0.10",
     "@types/memoizee": "^0.4.12",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^22.15.3",
     "@types/passport": "^1.0.17",
     "@types/passport-local": "^1.0.38",
