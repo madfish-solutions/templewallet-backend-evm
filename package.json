@@ -48,6 +48,7 @@
   "devDependencies": {
     "@types/async-retry": "^1.4.9",
     "@types/express": "^5.0.3",
+    "@types/big.js": "^6.2.2",
     "@types/memoizee": "^0.4.12",
     "@types/mocha": "^10.0.10",
     "@types/node": "^22.15.3",

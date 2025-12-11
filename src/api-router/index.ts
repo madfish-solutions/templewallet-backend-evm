@@ -9,9 +9,11 @@ import {
   swapConnectionsQuerySchema,
   swapRouteQuerySchema,
   swapTokensQuerySchema,
-  lifiStatusQuerySchema
+  lifiStatusQuerySchema,
+  route3SwapQuerySchema
 } from '../utils/schemas';
 
+import { get3RouteEvmSwap, get3RouteEvmTokensWithPrices } from './3route-evm';
 import { fetchLastTransferTimestamp, fetchTransactions } from './alchemy';
 import { getEvmAccountActivity, getEvmBalances, getEvmCollectiblesMetadata, getEvmTokensMetadata } from './covalent';
 import { everstakeDashboardRequestsProxy, everstakeEthRequestsProxy, everstakeWalletRequestsProxy } from './everstake';
@@ -192,4 +194,12 @@ apiRouter
   )
   .use('/everstake-wallet', everstakeWalletRequestsProxy)
   .use('/everstake-dashboard', everstakeDashboardRequestsProxy)
-  .use('/everstake-eth-api', everstakeEthRequestsProxy);
+  .use('/everstake-eth-api', everstakeEthRequestsProxy)
+  .get('/3route-tokens', async (_req, res) => {
+    sendData(await get3RouteEvmTokensWithPrices(), res);
+  })
+  .get('/3route-swap', async (req, res) => {
+    const { src, dst, amount, from, slippage, referrer, fee } = await route3SwapQuerySchema.validate(req.query);
+
+    sendData(await get3RouteEvmSwap({ src, dst, amount, from, slippage, referrer, fee }), res);
+  });

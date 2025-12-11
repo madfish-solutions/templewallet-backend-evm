@@ -219,7 +219,7 @@ const makeAlchemyRpcClient = memoizee(
   { max: Object.keys(ALCHEMY_VIEM_CHAINS).length }
 );
 
-export const getBlockTimestamp = memoizee(
+const getBlockTimestamp = memoizee(
   async (chainId: number, blockNumber: string) => {
     const fallbackPublicClient = makeFallbackPublicClient(chainId);
 
