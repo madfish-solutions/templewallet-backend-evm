@@ -16,6 +16,7 @@ import {
 import { get3RouteEvmSwap, get3RouteEvmTokensWithPrices } from './3route-evm';
 import { fetchLastTransferTimestamp, fetchTransactions } from './alchemy';
 import { getEvmAccountActivity, getEvmBalances, getEvmCollectiblesMetadata, getEvmTokensMetadata } from './covalent';
+import { everstakeDashboardRequestsProxy, everstakeEthRequestsProxy, everstakeWalletRequestsProxy } from './everstake';
 import {
   fetchAllSwapRoutes,
   fetchSupportedSwapChainIds,
@@ -191,6 +192,9 @@ apiRouter
       );
     })
   )
+  .use('/everstake-wallet', everstakeWalletRequestsProxy)
+  .use('/everstake-dashboard', everstakeDashboardRequestsProxy)
+  .use('/everstake-eth-api', everstakeEthRequestsProxy)
   .get('/3route-tokens', async (_req, res) => {
     sendData(await get3RouteEvmTokensWithPrices(), res);
   })
