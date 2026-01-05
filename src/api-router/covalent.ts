@@ -38,17 +38,45 @@ function getCovalentJobDeduplicationId(
 ) {
   return `${name}:${walletAddress.toLowerCase()}:${chainId}`;
 }
-
-let supportedChains: number[] | undefined;
 const NOT_SUPPORTED_CHAIN_ERROR_REGEX =
   /^\d+\/[a-z0-9-]+ chain not supported, currently supports:(\s*\d+\/[a-z0-9-]+)+/i;
 
 const MAX_AGE = 20_000;
+const SUPPORTED_CHAINS_MAX_AGE = 300_000;
 const memoizeAsync = <T extends (...args: any[]) => Promise<any>>(fn: T) =>
   memoizee(fn, {
     promise: true,
     maxAge: MAX_AGE
   });
+
+const fetchGoldrushSupportedChains = memoizee(
+  async (): Promise<number[]> => {
+    const response = await client.BaseService.getAllChainStatus();
+    if (response.error) {
+      const { error_code, error_message } = response;
+      const code = error_code && Number.isSafeInteger(Number(error_code)) ? Number(error_code) : 500;
+
+      throw new CodedError(code, error_message ?? 'Unknown error');
+    }
+
+    const chains =
+      response.data?.items
+        ?.filter(item => item?.has_data)
+        .map(item => Number(item?.chain_id))
+        .filter((chainId): chainId is number => Number.isInteger(chainId)) ?? [];
+
+    return chains;
+  },
+  { promise: true, maxAge: SUPPORTED_CHAINS_MAX_AGE }
+);
+
+async function ensureGoldrushChainSupported(chainId: number) {
+  const supportedChains = await fetchGoldrushSupportedChains();
+
+  if (!supportedChains.includes(chainId)) {
+    throw new CodedError(400, `Chain ${chainId} is not supported by GoldRush`);
+  }
+}
 
 type JobArgs<T extends CovalentQueueJobName> = [name: T, data: CovalentQueueJobsInputs[T]];
 async function getCovalentResponse(...args: JobArgs<'accountActivity'>): Promise<Serializable<ChainActivityResponse>>;
@@ -71,6 +99,7 @@ async function getCovalentResponse(
       response = await client.AllChainsService.getAddressActivity(data.walletAddress, { testnets: false });
       break;
     case 'balances':
+      await ensureGoldrushChainSupported(data.chainId);
       response = await client.BalanceService.getTokenBalancesForWalletAddress(
         data.chainId as ChainID,
         data.walletAddress,
@@ -78,6 +107,7 @@ async function getCovalentResponse(
       );
       break;
     case 'tokensMetadata':
+      await ensureGoldrushChainSupported(data.chainId);
       response = await client.BalanceService.getTokenBalancesForWalletAddress(
         data.chainId as ChainID,
         data.walletAddress,
@@ -86,7 +116,8 @@ async function getCovalentResponse(
       break;
     default:
       const { walletAddress, chainId } = data;
-      const withUncached = Boolean(supportedChains && !supportedChains.includes(chainId));
+      const supportedChains = await fetchGoldrushSupportedChains();
+      const withUncached = Boolean(supportedChains.length && !supportedChains.includes(chainId));
       response = await client.NftService.getNftsForAddress(chainId as ChainID, walletAddress, {
         withUncached,
         noSpam: true
@@ -94,11 +125,7 @@ async function getCovalentResponse(
       if (response.error) {
         const notSupportedChainErrorMatch = response.error_message?.match(NOT_SUPPORTED_CHAIN_ERROR_REGEX);
         if (notSupportedChainErrorMatch) {
-          supportedChains = notSupportedChainErrorMatch[0]
-            .split(':')[1]
-            .trim()
-            .split(/\s+/)
-            .map(s => parseInt(s));
+          fetchGoldrushSupportedChains.clear?.();
           response = await client.NftService.getNftsForAddress(chainId as ChainID, walletAddress, {
             withUncached: true,
             noSpam: true
