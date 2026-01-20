@@ -22,8 +22,8 @@ const ETH_TOKEN_SLUG = 'eth' as const;
 const TR_PSEUDO_LIMIT = 50;
 const APPROVALS_REQUESTS_LIMIT_PER_TXS_REQUEST = 3;
 const CACHE_TTLS = {
-  transactions: 30,
-  lastTransferTimestamp: 30
+  transactions: 10,
+  lastTransferTimestamp: 10
 } as const;
 
 type AlchemyQueueJobName = 'assetTransfers' | 'approvals';
