@@ -82,6 +82,7 @@ apiRouter
     createRateLimitMiddleware(covalentLimiter),
     createRateLimitMiddleware(covalentWalletLimiter, walletAddressKeyGenerator),
     withCodedExceptionHandler(async (req, res) => {
+      await new Promise(resolve => setTimeout(resolve, 70_000));
       const { walletAddress } = await evmMultichainQueryParamsSchema.validate(req.query);
       const { items: activityItems } = await getEvmAccountActivity(walletAddress);
 
