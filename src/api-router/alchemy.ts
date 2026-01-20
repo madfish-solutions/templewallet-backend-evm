@@ -12,6 +12,7 @@ import memoizee from 'memoizee';
 import { createPublicClient, fallback, GetBlockReturnType, http, PublicClient } from 'viem';
 
 import { ALCHEMY_ATTEMPTS, ALCHEMY_BACKOFF_DELAY, ALCHEMY_CONCURRENCY, ALCHEMY_CUPS, EnvVars } from '../config';
+import { getCacheKey, withRedisCache } from '../utils/cache';
 import { CodedError } from '../utils/errors';
 import { createQueuedFetchJobs } from '../utils/queued-fetch-jobs';
 
@@ -20,6 +21,10 @@ import { ALCHEMY_CHAINS_NAMES, ALCHEMY_VIEM_CHAINS } from './constants';
 const ETH_TOKEN_SLUG = 'eth' as const;
 const TR_PSEUDO_LIMIT = 50;
 const APPROVALS_REQUESTS_LIMIT_PER_TXS_REQUEST = 3;
+const CACHE_TTLS = {
+  transactions: 10,
+  lastTransferTimestamp: 10
+} as const;
 
 type AlchemyQueueJobName = 'assetTransfers' | 'approvals';
 interface AlchemyQueueJobsInputs {
@@ -262,10 +267,14 @@ const getBlockTimestamp = memoizee(
 );
 
 export async function fetchLastTransferTimestamp(chainId: number, accAddress: string): Promise<string | undefined> {
-  const txReqId = uniqueId('txReqId-');
-  const transfers = await fetchTransfers(txReqId, chainId, accAddress);
+  const cacheKey = getCacheKey('alchemy', ['lastTransferTimestamp', chainId, accAddress.toLowerCase()]);
 
-  return transfers[0]?.metadata.blockTimestamp;
+  return withRedisCache(cacheKey, CACHE_TTLS.lastTransferTimestamp, async () => {
+    const txReqId = uniqueId('txReqId-');
+    const transfers = await fetchTransfers(txReqId, chainId, accAddress);
+
+    return transfers[0]?.metadata.blockTimestamp;
+  });
 }
 
 export async function fetchTransactions(
@@ -274,95 +283,105 @@ export async function fetchTransactions(
   contractAddress?: string,
   olderThanBlockHeight?: `${number}`
 ): Promise<FetchTransactionsResponse> {
-  const txReqId = uniqueId('txReqId-');
-  const transfers = await fetchTransfers(txReqId, chainId, accAddress, contractAddress, olderThanBlockHeight);
+  const cacheKey = getCacheKey('alchemy', [
+    'transactions',
+    chainId,
+    accAddress.toLowerCase(),
+    contractAddress?.toLowerCase() ?? 'all',
+    olderThanBlockHeight ?? 'latest'
+  ]);
 
-  if (!transfers.length || contractAddress === ETH_TOKEN_SLUG) {
-    return { transfers, approvals: [] };
-  }
+  return withRedisCache(cacheKey, CACHE_TTLS.transactions, async () => {
+    const txReqId = uniqueId('txReqId-');
+    const transfers = await fetchTransfers(txReqId, chainId, accAddress, contractAddress, olderThanBlockHeight);
 
-  let approvals: Log[] = [];
-  const highestBlockNum = transfers.at(0)!.blockNum;
-  const lowestBlockNum = transfers.at(-1)!.blockNum;
-  try {
-    approvals = await fetch('approvals', {
-      txReqId,
-      chainId,
-      accAddress,
-      contractAddress,
-      toBlock: highestBlockNum,
-      fromBlock: lowestBlockNum
-    });
-  } catch (e: any) {
-    const blockErrorRangeMatch = e?.message?.match(BLOCK_RANGE_ERROR_REGEX);
-
-    if (!blockErrorRangeMatch) {
-      throw e;
+    if (!transfers.length || contractAddress === ETH_TOKEN_SLUG) {
+      return { transfers, approvals: [] };
     }
 
-    const blockRange = parseInt(blockErrorRangeMatch[1], 10);
-    const parsedHighestBlockNum = Number(highestBlockNum);
-    const parsedLowestBlockNum = Number(lowestBlockNum);
-    const requestsCountForAllBlocks = Math.ceil((parsedHighestBlockNum - parsedLowestBlockNum + 1) / blockRange);
-    let blocksRanges: [number, number][];
-    const sendTokenTransfers = transfers
-      .filter(
-        ({ from, category }) => from.toLowerCase() === accAddress.toLowerCase() && !GAS_CATEGORIES.includes(category)
-      )
-      .slice(0, APPROVALS_REQUESTS_LIMIT_PER_TXS_REQUEST);
-    if (requestsCountForAllBlocks <= sendTokenTransfers.length) {
-      blocksRanges = range(parsedLowestBlockNum, parsedHighestBlockNum + 1, blockRange).map(fromBlock => [
-        fromBlock,
-        fromBlock + blockRange - 1
-      ]);
-    } else {
-      blocksRanges = sendTokenTransfers
-        .map(({ blockNum }) => [
-          Math.max(Number(blockNum) - Math.floor(blockRange / 2) + 1, parsedLowestBlockNum),
-          Math.min(Number(blockNum) + Math.floor(blockRange / 2), parsedHighestBlockNum)
-        ])
-        .reduce<[number, number][]>((acc, [fromBlock, toBlock]) => {
-          // Merge intervals that are in start descending order
-          const last = acc.at(-1);
-          if (!last) {
-            acc.push([fromBlock, toBlock]);
+    let approvals: Log[] = [];
+    const highestBlockNum = transfers.at(0)!.blockNum;
+    const lowestBlockNum = transfers.at(-1)!.blockNum;
+    try {
+      approvals = await fetch('approvals', {
+        txReqId,
+        chainId,
+        accAddress,
+        contractAddress,
+        toBlock: highestBlockNum,
+        fromBlock: lowestBlockNum
+      });
+    } catch (e: any) {
+      const blockErrorRangeMatch = e?.message?.match(BLOCK_RANGE_ERROR_REGEX);
+
+      if (!blockErrorRangeMatch) {
+        throw e;
+      }
+
+      const blockRange = parseInt(blockErrorRangeMatch[1], 10);
+      const parsedHighestBlockNum = Number(highestBlockNum);
+      const parsedLowestBlockNum = Number(lowestBlockNum);
+      const requestsCountForAllBlocks = Math.ceil((parsedHighestBlockNum - parsedLowestBlockNum + 1) / blockRange);
+      let blocksRanges: [number, number][];
+      const sendTokenTransfers = transfers
+        .filter(
+          ({ from, category }) => from.toLowerCase() === accAddress.toLowerCase() && !GAS_CATEGORIES.includes(category)
+        )
+        .slice(0, APPROVALS_REQUESTS_LIMIT_PER_TXS_REQUEST);
+      if (requestsCountForAllBlocks <= sendTokenTransfers.length) {
+        blocksRanges = range(parsedLowestBlockNum, parsedHighestBlockNum + 1, blockRange).map(fromBlock => [
+          fromBlock,
+          fromBlock + blockRange - 1
+        ]);
+      } else {
+        blocksRanges = sendTokenTransfers
+          .map(({ blockNum }) => [
+            Math.max(Number(blockNum) - Math.floor(blockRange / 2) + 1, parsedLowestBlockNum),
+            Math.min(Number(blockNum) + Math.floor(blockRange / 2), parsedHighestBlockNum)
+          ])
+          .reduce<[number, number][]>((acc, [fromBlock, toBlock]) => {
+            // Merge intervals that are in start descending order
+            const last = acc.at(-1);
+            if (!last) {
+              acc.push([fromBlock, toBlock]);
+
+              return acc;
+            }
+
+            const [lastFromBlock, lastToBlock] = last;
+            const newToBlock = Math.min(lastFromBlock - 1, toBlock);
+
+            if (fromBlock > newToBlock) {
+              return acc;
+            }
+
+            if (lastFromBlock - newToBlock > 1 || lastToBlock - fromBlock + 1 > blockRange) {
+              acc.push([fromBlock, newToBlock]);
+            } else {
+              last[0] = fromBlock;
+            }
 
             return acc;
-          }
-
-          const [lastFromBlock, lastToBlock] = last;
-          const newToBlock = Math.min(lastFromBlock - 1, toBlock);
-
-          if (fromBlock > newToBlock) {
-            return acc;
-          }
-
-          if (lastFromBlock - newToBlock > 1 || lastToBlock - fromBlock + 1 > blockRange) {
-            acc.push([fromBlock, newToBlock]);
-          } else {
-            last[0] = fromBlock;
-          }
-
-          return acc;
-        }, [])
-        .reverse();
+          }, [])
+          .reverse();
+      }
+      const approvalsChunks = await Promise.all(
+        blocksRanges.map(([fromBlock, toBlock]) =>
+          fetch('approvals', {
+            txReqId,
+            chainId,
+            accAddress,
+            contractAddress,
+            toBlock: `0x${toBlock.toString(16)}`,
+            fromBlock: `0x${fromBlock.toString(16)}`
+          })
+        )
+      );
+      approvals = uniqBy(approvalsChunks.flat(), log => `${log.transactionHash}-${log.logIndex}`);
     }
-    const approvalsChunks = await Promise.all(
-      blocksRanges.map(([fromBlock, toBlock]) =>
-        fetch('approvals', {
-          txReqId,
-          chainId,
-          accAddress,
-          contractAddress,
-          toBlock: `0x${toBlock.toString(16)}`,
-          fromBlock: `0x${fromBlock.toString(16)}`
-        })
-      )
-    );
-    approvals = uniqBy(approvalsChunks.flat(), log => `${log.transactionHash}-${log.logIndex}`);
-  }
 
-  return { transfers, approvals };
+    return { transfers, approvals };
+  });
 }
 
 async function fetchTransfers(

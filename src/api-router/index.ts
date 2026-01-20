@@ -1,6 +1,15 @@
 import { Router, Response } from 'express';
 
-import { covalentLimiter, createRateLimitMiddleware, txLimiter } from '../rateLimiter';
+import {
+  covalentLimiter,
+  covalentWalletLimiter,
+  createRateLimitMiddleware,
+  everstakeLimiter,
+  lifiLimiter,
+  txLimiter,
+  txWalletLimiter,
+  walletAddressKeyGenerator
+} from '../rateLimiter';
 import { withCodedExceptionHandler } from '../utils/express-helpers';
 import {
   evmMultichainQueryParamsSchema,
@@ -41,6 +50,7 @@ apiRouter
   .get(
     '/balances',
     createRateLimitMiddleware(covalentLimiter),
+    createRateLimitMiddleware(covalentWalletLimiter, walletAddressKeyGenerator),
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress, chainId } = await evmQueryParamsSchema.validate(req.query);
 
@@ -50,6 +60,7 @@ apiRouter
   .get(
     '/tokens-metadata',
     createRateLimitMiddleware(covalentLimiter),
+    createRateLimitMiddleware(covalentWalletLimiter, walletAddressKeyGenerator),
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress, chainId } = await evmQueryParamsSchema.validate(req.query);
 
@@ -57,7 +68,57 @@ apiRouter
     })
   )
   .get(
+    '/collectibles-metadata',
+    createRateLimitMiddleware(covalentLimiter),
+    createRateLimitMiddleware(covalentWalletLimiter, walletAddressKeyGenerator),
+    withCodedExceptionHandler(async (req, res) => {
+      const { walletAddress, chainId } = await evmQueryParamsSchema.validate(req.query);
+
+      sendData(await getEvmCollectiblesMetadata(walletAddress, chainId), res);
+    })
+  )
+  .get(
+    '/is-initialized',
+    createRateLimitMiddleware(covalentLimiter),
+    createRateLimitMiddleware(covalentWalletLimiter, walletAddressKeyGenerator),
+    withCodedExceptionHandler(async (req, res) => {
+      const { walletAddress } = await evmMultichainQueryParamsSchema.validate(req.query);
+      const { items: activityItems } = await getEvmAccountActivity(walletAddress);
+
+      if ((activityItems ?? []).length > 0) {
+        res.status(200).json({ isInitialized: true });
+
+        return;
+      }
+
+      const rootstockNetsLastTransferTimestamps = await Promise.all(
+        [30, 31].map(chainId => fetchLastTransferTimestamp(chainId, walletAddress))
+      );
+      res.status(200).json({ isInitialized: rootstockNetsLastTransferTimestamps.some(Boolean) });
+    })
+  )
+  .get(
+    '/transactions/v2',
+    createRateLimitMiddleware(txLimiter),
+    createRateLimitMiddleware(txWalletLimiter, walletAddressKeyGenerator),
+    withCodedExceptionHandler(async (req, res) => {
+      const { walletAddress, chainId, contractAddress, olderThanBlockHeight } =
+        await evmQueryParamsTransactionsSchema.validate(req.query);
+
+      sendData(
+        await fetchTransactions(
+          chainId,
+          walletAddress,
+          contractAddress,
+          olderThanBlockHeight as `${number}` | undefined
+        ),
+        res
+      );
+    })
+  )
+  .get(
     '/swap-routes',
+    createRateLimitMiddleware(lifiLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { fromChain, toChain, fromToken, toToken, amount, amountForGas, fromAddress, slippage } =
         await swapRouteQuerySchema.validate(req.query);
@@ -80,6 +141,7 @@ apiRouter
   )
   .get(
     '/swap-route',
+    createRateLimitMiddleware(lifiLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { fromChain, toChain, fromToken, toToken, amount, amountForGas, fromAddress, slippage } =
         await swapRouteQuerySchema.validate(req.query);
@@ -100,6 +162,7 @@ apiRouter
   )
   .get(
     '/swap-chains',
+    createRateLimitMiddleware(lifiLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const data = await fetchSupportedSwapChainIds();
 
@@ -108,6 +171,7 @@ apiRouter
   )
   .get(
     '/swap-tokens',
+    createRateLimitMiddleware(lifiLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { chainIds } = await swapTokensQuerySchema.validate(req.query);
 
@@ -120,6 +184,7 @@ apiRouter
   )
   .get(
     '/swap-connections',
+    createRateLimitMiddleware(lifiLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { fromChain, fromToken } = await swapConnectionsQuerySchema.validate(req.query);
 
@@ -130,6 +195,7 @@ apiRouter
   )
   .post(
     '/swap-step-transaction',
+    createRateLimitMiddleware(lifiLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const data = await fetchStepTransaction(req.body);
 
@@ -138,6 +204,7 @@ apiRouter
   )
   .get(
     '/swap-status',
+    createRateLimitMiddleware(lifiLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { txHash, bridge, fromChain, toChain } = await lifiStatusQuerySchema.validate(req.query);
 
@@ -146,55 +213,9 @@ apiRouter
       res.status(200).send(data);
     })
   )
-  .get(
-    '/collectibles-metadata',
-    createRateLimitMiddleware(covalentLimiter),
-    withCodedExceptionHandler(async (req, res) => {
-      const { walletAddress, chainId } = await evmQueryParamsSchema.validate(req.query);
-
-      sendData(await getEvmCollectiblesMetadata(walletAddress, chainId), res);
-    })
-  )
-  .get(
-    '/is-initialized',
-    createRateLimitMiddleware(covalentLimiter),
-    withCodedExceptionHandler(async (req, res) => {
-      const { walletAddress } = await evmMultichainQueryParamsSchema.validate(req.query);
-      const { items: activityItems } = await getEvmAccountActivity(walletAddress);
-
-      if ((activityItems ?? []).length > 0) {
-        res.status(200).json({ isInitialized: true });
-
-        return;
-      }
-
-      const rootstockNetsLastTransferTimestamps = await Promise.all(
-        [30, 31].map(chainId => fetchLastTransferTimestamp(chainId, walletAddress))
-      );
-      res.status(200).json({ isInitialized: rootstockNetsLastTransferTimestamps.some(Boolean) });
-    })
-  )
-  .get(
-    '/transactions/v2',
-    createRateLimitMiddleware(txLimiter),
-    withCodedExceptionHandler(async (req, res) => {
-      const { walletAddress, chainId, contractAddress, olderThanBlockHeight } =
-        await evmQueryParamsTransactionsSchema.validate(req.query);
-
-      sendData(
-        await fetchTransactions(
-          chainId,
-          walletAddress,
-          contractAddress,
-          olderThanBlockHeight as `${number}` | undefined
-        ),
-        res
-      );
-    })
-  )
-  .use('/everstake-wallet', everstakeWalletRequestsProxy)
-  .use('/everstake-dashboard', everstakeDashboardRequestsProxy)
-  .use('/everstake-eth-api', everstakeEthRequestsProxy)
+  .use('/everstake-wallet', createRateLimitMiddleware(everstakeLimiter), everstakeWalletRequestsProxy)
+  .use('/everstake-dashboard', createRateLimitMiddleware(everstakeLimiter), everstakeDashboardRequestsProxy)
+  .use('/everstake-eth-api', createRateLimitMiddleware(everstakeLimiter), everstakeEthRequestsProxy)
   .get('/3route-tokens', async (_req, res) => {
     sendData(await get3RouteEvmTokensWithPrices(), res);
   })

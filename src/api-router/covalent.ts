@@ -9,6 +9,7 @@ import {
 import memoizee from 'memoizee';
 
 import { COVALENT_ATTEMPTS, COVALENT_BACKOFF_DELAY, COVALENT_CONCURRENCY, COVALENT_RPS, EnvVars } from '../config';
+import { getCacheKey, withRedisCache } from '../utils/cache';
 import { CodedError } from '../utils/errors';
 import { createQueuedFetchJobs } from '../utils/queued-fetch-jobs';
 
@@ -48,6 +49,16 @@ const memoizeAsync = <T extends (...args: any[]) => Promise<any>>(fn: T) =>
     promise: true,
     maxAge: MAX_AGE
   });
+
+const CACHE_TTLS = {
+  accountActivity: 60,
+  balances: 30,
+  tokensMetadata: 60 * 60 * 24,
+  collectiblesMetadata: 60 * 60 * 24
+} as const;
+
+const getCovalentCacheKey = (name: CovalentQueueJobName, walletAddress: string, chainId?: number) =>
+  getCacheKey('covalent', [name, walletAddress.toLowerCase(), chainId]);
 
 const fetchGoldrushSupportedChains = memoizee(
   async (): Promise<number[]> => {
@@ -173,18 +184,28 @@ const { fetch, queue } = createQueuedFetchJobs<CovalentQueueJobName, CovalentQue
 
 export const covalentRequestsQueue = queue;
 
-export const getEvmAccountActivity = memoizeAsync((walletAddress: string) =>
-  fetch('accountActivity', { walletAddress })
-);
-
 export const getEvmBalances = memoizeAsync((walletAddress: string, chainId: number) =>
-  fetch('balances', { walletAddress, chainId })
+  withRedisCache(getCovalentCacheKey('balances', walletAddress, chainId), CACHE_TTLS.balances, () =>
+    fetch('balances', { walletAddress, chainId })
+  )
 );
 
 export const getEvmTokensMetadata = memoizeAsync((walletAddress: string, chainId: number) =>
-  fetch('tokensMetadata', { walletAddress, chainId })
+  withRedisCache(getCovalentCacheKey('tokensMetadata', walletAddress, chainId), CACHE_TTLS.tokensMetadata, () =>
+    fetch('tokensMetadata', { walletAddress, chainId })
+  )
 );
 
 export const getEvmCollectiblesMetadata = memoizeAsync((walletAddress: string, chainId: number) =>
-  fetch('collectiblesMetadata', { walletAddress, chainId })
+  withRedisCache(
+    getCovalentCacheKey('collectiblesMetadata', walletAddress, chainId),
+    CACHE_TTLS.collectiblesMetadata,
+    () => fetch('collectiblesMetadata', { walletAddress, chainId })
+  )
+);
+
+export const getEvmAccountActivity = memoizeAsync((walletAddress: string) =>
+  withRedisCache(getCovalentCacheKey('accountActivity', walletAddress), CACHE_TTLS.accountActivity, () =>
+    fetch('accountActivity', { walletAddress })
+  )
 );
