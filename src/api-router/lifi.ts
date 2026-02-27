@@ -65,7 +65,7 @@ export const fetchAllSwapRoutes = withRetry(
 
     return routesResponse;
   },
-  err => new CodedError(err?.cause?.status || 500, err?.message || 'LiFi routes error')
+  err => new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi routes error')
 );
 
 export const fetchSwapRouteFromQuote = withRetry(
@@ -84,7 +84,7 @@ export const fetchSwapRouteFromQuote = withRetry(
 
     return convertQuoteToRoute(quote);
   },
-  err => new CodedError(err?.cause?.status || 500, err?.message || 'LiFi quote error')
+  err => new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi quote error')
 );
 
 export const fetchSupportedSwapChainIds = withMemoizee(
@@ -94,13 +94,29 @@ export const fetchSupportedSwapChainIds = withMemoizee(
 
       return chainsMetadata.map(chain => chain.id);
     },
-    err => new CodedError(err?.statusCode || 500, err?.message || 'LiFi chains metadata error')
+    err => new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi chains metadata error')
   )
 );
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const fetchConnectedDestinationTokens = async (_params: ConnectionsRequest) => {
-  return fetchEvmTokensMetadata();
+export const fetchConnectedDestinationTokens = async (params: ConnectionsRequest) => {
+  const allTokens = await fetchEvmTokensMetadata();
+  const fromChainId = Number(params.fromChain);
+  const fromTokenLower = params.fromToken?.toLowerCase();
+
+  if (fromTokenLower == null || !Number.isFinite(fromChainId) || !Object.hasOwn(allTokens, fromChainId)) {
+    return allTokens;
+  }
+
+  const filtered = allTokens[fromChainId].filter(token => token.address.toLowerCase() !== fromTokenLower);
+
+  if (filtered.length === 0) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { [fromChainId]: _, ...rest } = allTokens;
+
+    return rest;
+  }
+
+  return { ...allTokens, [fromChainId]: filtered };
 };
 
 const fetchEvmTokensMetadata = withMemoizee(
@@ -110,7 +126,7 @@ const fetchEvmTokensMetadata = withMemoizee(
 
       return response.tokens;
     },
-    err => new CodedError(err?.statusCode || 500, err?.message || 'LiFi tokens fetch error')
+    err => new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi tokens fetch error')
   )
 );
 
