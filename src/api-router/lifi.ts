@@ -4,7 +4,6 @@ import {
   convertQuoteToRoute,
   createConfig,
   getChains,
-  getConnections,
   getQuote,
   getRoutes,
   getStatus,
@@ -15,8 +14,7 @@ import {
   QuoteRequest,
   RoutesRequest,
   RoutesResponse,
-  type SignedLiFiStep,
-  Token
+  type SignedLiFiStep
 } from '@lifi/sdk';
 import retry from 'async-retry';
 import memoizee from 'memoizee';
@@ -100,29 +98,10 @@ export const fetchSupportedSwapChainIds = withMemoizee(
   )
 );
 
-export const fetchConnectedDestinationTokens = withRetry(
-  async (params: ConnectionsRequest) => {
-    const connectionsResponse = await getConnections({
-      fromChain: params.fromChain,
-      fromToken: params.fromToken,
-      chainTypes: [ChainType.EVM]
-    });
-
-    const result: Record<number, Token[]> = {};
-
-    for (const connection of connectionsResponse.connections) {
-      for (const token of connection.toTokens) {
-        if (!result[token.chainId]) {
-          result[token.chainId] = [];
-        }
-        result[token.chainId].push(token);
-      }
-    }
-
-    return result;
-  },
-  err => new CodedError(err?.statusCode || 500, err?.message || 'LiFi connections fetch error')
-);
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const fetchConnectedDestinationTokens = async (_params: ConnectionsRequest) => {
+  return fetchEvmTokensMetadata();
+};
 
 const fetchEvmTokensMetadata = withMemoizee(
   withRetry(
