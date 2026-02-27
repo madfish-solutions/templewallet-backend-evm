@@ -98,26 +98,8 @@ export const fetchSupportedSwapChainIds = withMemoizee(
   )
 );
 
-export const fetchConnectedDestinationTokens = async (params: ConnectionsRequest) => {
-  const allTokens = await fetchEvmTokensMetadata();
-  const fromChainId = Number(params.fromChain);
-  const fromTokenLower = params.fromToken?.toLowerCase();
-
-  if (fromTokenLower == null || !Number.isFinite(fromChainId) || !Object.hasOwn(allTokens, fromChainId)) {
-    return allTokens;
-  }
-
-  const filtered = allTokens[fromChainId].filter(token => token.address.toLowerCase() !== fromTokenLower);
-
-  if (filtered.length === 0) {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { [fromChainId]: _, ...rest } = allTokens;
-
-    return rest;
-  }
-
-  return { ...allTokens, [fromChainId]: filtered };
-};
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const fetchConnectedDestinationTokens = async (_params: ConnectionsRequest) => fetchEvmTokensMetadata();
 
 const fetchEvmTokensMetadata = withMemoizee(
   withRetry(
