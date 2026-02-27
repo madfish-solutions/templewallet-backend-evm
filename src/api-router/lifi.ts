@@ -4,7 +4,6 @@ import {
   convertQuoteToRoute,
   createConfig,
   getChains,
-  getConnections,
   getQuote,
   getRoutes,
   getStatus,
@@ -15,8 +14,7 @@ import {
   QuoteRequest,
   RoutesRequest,
   RoutesResponse,
-  type SignedLiFiStep,
-  Token
+  type SignedLiFiStep
 } from '@lifi/sdk';
 import retry from 'async-retry';
 import memoizee from 'memoizee';
@@ -67,7 +65,7 @@ export const fetchAllSwapRoutes = withRetry(
 
     return routesResponse;
   },
-  err => new CodedError(err?.cause?.status || 500, err?.message || 'LiFi routes error')
+  err => new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi routes error')
 );
 
 export const fetchSwapRouteFromQuote = withRetry(
@@ -86,7 +84,7 @@ export const fetchSwapRouteFromQuote = withRetry(
 
     return convertQuoteToRoute(quote);
   },
-  err => new CodedError(err?.cause?.status || 500, err?.message || 'LiFi quote error')
+  err => new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi quote error')
 );
 
 export const fetchSupportedSwapChainIds = withMemoizee(
@@ -96,33 +94,12 @@ export const fetchSupportedSwapChainIds = withMemoizee(
 
       return chainsMetadata.map(chain => chain.id);
     },
-    err => new CodedError(err?.statusCode || 500, err?.message || 'LiFi chains metadata error')
+    err => new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi chains metadata error')
   )
 );
 
-export const fetchConnectedDestinationTokens = withRetry(
-  async (params: ConnectionsRequest) => {
-    const connectionsResponse = await getConnections({
-      fromChain: params.fromChain,
-      fromToken: params.fromToken,
-      chainTypes: [ChainType.EVM]
-    });
-
-    const result: Record<number, Token[]> = {};
-
-    for (const connection of connectionsResponse.connections) {
-      for (const token of connection.toTokens) {
-        if (!result[token.chainId]) {
-          result[token.chainId] = [];
-        }
-        result[token.chainId].push(token);
-      }
-    }
-
-    return result;
-  },
-  err => new CodedError(err?.statusCode || 500, err?.message || 'LiFi connections fetch error')
-);
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const fetchConnectedDestinationTokens = async (_params: ConnectionsRequest) => fetchEvmTokensMetadata();
 
 const fetchEvmTokensMetadata = withMemoizee(
   withRetry(
@@ -131,7 +108,7 @@ const fetchEvmTokensMetadata = withMemoizee(
 
       return response.tokens;
     },
-    err => new CodedError(err?.statusCode || 500, err?.message || 'LiFi tokens fetch error')
+    err => new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi tokens fetch error')
   )
 );
 
