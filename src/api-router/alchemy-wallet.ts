@@ -14,6 +14,15 @@ interface WalletPrepareCallsRequestBody {
   [key: string]: unknown;
 }
 
+interface WalletSendPreparedCallsRequestBody {
+  chainId: string;
+  data: {
+    sender?: unknown;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
 const chainIdTokenAddressRecord: Record<string, string> = {
   '0x66eee': '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d', // Arbitrum Sepolia USDC
   '0x13882': '0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582', // Polygon Amoy USDC
@@ -67,14 +76,77 @@ function parseWalletPrepareCallsBody(body: unknown): WalletPrepareCallsRequestBo
   };
 }
 
-export const getWalletPrepareCallsRateLimitKey = (body: unknown): string | undefined => {
+function parseWalletSendPreparedCallsBody(body: unknown): WalletSendPreparedCallsRequestBody {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new CodedError(400, 'Body must be a JSON object');
+  }
+
+  const parsedBody = body as Record<string, unknown>;
+  const { chainId, data } = parsedBody;
+
+  if (chainId === undefined || typeof chainId !== 'string' || chainId.length === 0) {
+    throw new CodedError(400, 'chainId must be a non-empty string');
+  }
+
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new CodedError(400, 'data must be an object');
+  }
+
+  return {
+    ...parsedBody,
+    chainId,
+    data: data as WalletSendPreparedCallsRequestBody['data']
+  };
+}
+
+function parseWalletGetCallsStatusBody(body: unknown): string {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new CodedError(400, 'Body must be a JSON object');
+  }
+
+  const callId = (body as Record<string, unknown>).callId;
+
+  if (typeof callId !== 'string' || !callId.startsWith('0x')) {
+    throw new CodedError(400, 'callId must be a hex string');
+  }
+
+  return callId;
+}
+
+async function callAlchemyWalletMethod(method: string, params: unknown[]) {
+  const payload = {
+    id: 1,
+    jsonrpc: '2.0',
+    method,
+    params
+  };
+
+  const { data } = await alchemyWalletApi.post('', payload);
+
+  return data;
+}
+
+export const getAlchemyWalletRateLimitKey = (body: unknown): string | undefined => {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return undefined;
   }
 
-  const from = (body as Record<string, unknown>).from;
+  const typedBody = body as Record<string, unknown>;
+  const from = typedBody.from;
 
-  return typeof from === 'string' ? from : undefined;
+  if (typeof from === 'string') {
+    return from;
+  }
+
+  const data = typedBody.data;
+
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return undefined;
+  }
+
+  const sender = (data as Record<string, unknown>).sender;
+
+  return typeof sender === 'string' ? sender : undefined;
 };
 
 export async function proxyWalletPrepareCalls(body: unknown) {
@@ -83,19 +155,22 @@ export async function proxyWalletPrepareCalls(body: unknown) {
     Object.entries({ chainId, ...requestParams }).filter(([key]) => key !== 'capabilities')
   );
 
-  const payload = {
-    id: 1,
-    jsonrpc: '2.0',
-    method: 'wallet_prepareCalls',
-    params: [
-      {
-        ...requestParamsWithoutCapabilities,
-        ...(paymasterService ? { capabilities: getPaymasterServiceCapabilities(chainId) } : {})
-      }
-    ]
-  };
+  return callAlchemyWalletMethod('wallet_prepareCalls', [
+    {
+      ...requestParamsWithoutCapabilities,
+      ...(paymasterService ? { capabilities: getPaymasterServiceCapabilities(chainId) } : {})
+    }
+  ]);
+}
 
-  const { data } = await alchemyWalletApi.post('', payload);
+export async function proxyWalletSendPreparedCalls(body: unknown) {
+  const requestParams = parseWalletSendPreparedCallsBody(body);
 
-  return data;
+  return callAlchemyWalletMethod('wallet_sendPreparedCalls', [requestParams]);
+}
+
+export async function proxyWalletGetCallsStatus(body: unknown) {
+  const callId = parseWalletGetCallsStatusBody(body);
+
+  return callAlchemyWalletMethod('wallet_getCallsStatus', [callId]);
 }

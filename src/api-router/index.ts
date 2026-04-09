@@ -26,7 +26,12 @@ import {
 
 import { get3RouteEvmSwap, get3RouteEvmTokensWithPrices } from './3route-evm';
 import { fetchLastTransferTimestamp, fetchTransactions } from './alchemy';
-import { getWalletPrepareCallsRateLimitKey, proxyWalletPrepareCalls } from './alchemy-wallet';
+import {
+  getAlchemyWalletRateLimitKey,
+  proxyWalletGetCallsStatus,
+  proxyWalletPrepareCalls,
+  proxyWalletSendPreparedCalls
+} from './alchemy-wallet';
 import { getEvmAccountActivity, getEvmBalances, getEvmCollectiblesMetadata, getEvmTokensMetadata } from './covalent';
 import { everstakeDashboardRequestsProxy, everstakeEthRequestsProxy, everstakeWalletRequestsProxy } from './everstake';
 import {
@@ -199,9 +204,24 @@ apiRouter
   .post(
     '/alchemy/wallet_prepareCalls',
     createRateLimitMiddleware(alchemyPrepareCallsLimiter),
-    createRateLimitMiddleware(alchemyPrepareCallsWalletLimiter, req => getWalletPrepareCallsRateLimitKey(req.body)),
+    createRateLimitMiddleware(alchemyPrepareCallsWalletLimiter, req => getAlchemyWalletRateLimitKey(req.body)),
     withCodedExceptionHandler(async (req, res) => {
       res.status(200).send(await proxyWalletPrepareCalls(req.body));
+    })
+  )
+  .post(
+    '/alchemy/wallet_sendPreparedCalls',
+    createRateLimitMiddleware(alchemyPrepareCallsLimiter),
+    createRateLimitMiddleware(alchemyPrepareCallsWalletLimiter, req => getAlchemyWalletRateLimitKey(req.body)),
+    withCodedExceptionHandler(async (req, res) => {
+      res.status(200).send(await proxyWalletSendPreparedCalls(req.body));
+    })
+  )
+  .post(
+    '/alchemy/wallet_getCallsStatus',
+    createRateLimitMiddleware(alchemyPrepareCallsLimiter),
+    withCodedExceptionHandler(async (req, res) => {
+      res.status(200).send(await proxyWalletGetCallsStatus(req.body));
     })
   )
   .post(
