@@ -35,6 +35,22 @@ export const txWalletLimiter = new RateLimiterRedis({
   blockDuration: 60
 });
 
+export const alchemyPrepareCallsLimiter = new RateLimiterRedis({
+  storeClient: redisClient,
+  keyPrefix: 'rl-alchemy-prepare-calls',
+  points: 30,
+  duration: 60,
+  blockDuration: 60
+});
+
+export const alchemyPrepareCallsWalletLimiter = new RateLimiterRedis({
+  storeClient: redisClient,
+  keyPrefix: 'rl-alchemy-prepare-calls-wallet',
+  points: 20,
+  duration: 60,
+  blockDuration: 60
+});
+
 export const lifiLimiter = new RateLimiterRedis({
   storeClient: redisClient,
   keyPrefix: 'rl-lifi',
