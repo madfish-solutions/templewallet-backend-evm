@@ -10,6 +10,7 @@ const alchemyWalletApi = axios.create({
 interface WalletPrepareCallsRequestBody {
   chainId: string;
   paymasterService?: boolean;
+  onlyEstimation?: boolean;
   capabilities?: unknown;
   [key: string]: unknown;
 }
@@ -29,9 +30,18 @@ const chainIdTokenAddressRecord: Record<string, string> = {
   '0xaa36a7': '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238' // Ethereum Sepolia USDC
 };
 
-const getPaymasterServiceCapabilities = (chainId: string) => {
+const getPaymasterServiceCapabilities = (chainId: string, onlyEstimation?: boolean) => {
   if (!EnvVars.ALCHEMY_POLICY_ID) {
     throw new CodedError(500, 'ALCHEMY_POLICY_ID is not configured');
+  }
+
+  if (onlyEstimation === true) {
+    return {
+      paymasterService: {
+        policyId: EnvVars.ALCHEMY_POLICY_ID,
+        onlyEstimation
+      }
+    };
   }
 
   const tokenAddress = chainIdTokenAddressRecord[chainId];
@@ -59,10 +69,14 @@ function parseWalletPrepareCallsBody(body: unknown): WalletPrepareCallsRequestBo
   }
 
   const parsedBody = body as Record<string, unknown>;
-  const { paymasterService, chainId } = parsedBody;
+  const { paymasterService, onlyEstimation, chainId } = parsedBody;
 
   if (paymasterService !== undefined && typeof paymasterService !== 'boolean') {
     throw new CodedError(400, 'paymasterService must be a boolean');
+  }
+
+  if (onlyEstimation !== undefined && typeof onlyEstimation !== 'boolean') {
+    throw new CodedError(400, 'onlyEstimation must be a boolean');
   }
 
   if (chainId === undefined || typeof chainId !== 'string' || chainId.length === 0) {
@@ -72,7 +86,8 @@ function parseWalletPrepareCallsBody(body: unknown): WalletPrepareCallsRequestBo
   return {
     ...parsedBody,
     chainId,
-    paymasterService: paymasterService as boolean | undefined
+    paymasterService: paymasterService,
+    onlyEstimation
   };
 }
 
@@ -150,7 +165,7 @@ export const getAlchemyWalletRateLimitKey = (body: unknown): string | undefined 
 };
 
 export async function proxyWalletPrepareCalls(body: unknown) {
-  const { paymasterService, chainId, ...requestParams } = parseWalletPrepareCallsBody(body);
+  const { paymasterService, onlyEstimation, chainId, ...requestParams } = parseWalletPrepareCallsBody(body);
   const requestParamsWithoutCapabilities = Object.fromEntries(
     Object.entries({ chainId, ...requestParams }).filter(([key]) => key !== 'capabilities')
   );
@@ -158,7 +173,7 @@ export async function proxyWalletPrepareCalls(body: unknown) {
   return callAlchemyWalletMethod('wallet_prepareCalls', [
     {
       ...requestParamsWithoutCapabilities,
-      ...(paymasterService ? { capabilities: getPaymasterServiceCapabilities(chainId) } : {})
+      ...(paymasterService ? { capabilities: getPaymasterServiceCapabilities(chainId, onlyEstimation) } : {})
     }
   ]);
 }
