@@ -16,11 +16,9 @@ interface WalletPrepareCallsRequestBody {
 }
 
 interface WalletSendPreparedCallsRequestBody {
-  chainId: string;
-  data: {
-    sender?: unknown;
-    [key: string]: unknown;
-  };
+  type?: string;
+  chainId?: string;
+  data: unknown[] | Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -35,15 +33,6 @@ const getPaymasterServiceCapabilities = (chainId: string, onlyEstimation?: boole
     throw new CodedError(500, 'ALCHEMY_POLICY_ID is not configured');
   }
 
-  if (onlyEstimation === true) {
-    return {
-      paymasterService: {
-        policyId: EnvVars.ALCHEMY_POLICY_ID,
-        onlyEstimation
-      }
-    };
-  }
-
   const tokenAddress = chainIdTokenAddressRecord[chainId];
 
   if (!tokenAddress) {
@@ -53,6 +42,7 @@ const getPaymasterServiceCapabilities = (chainId: string, onlyEstimation?: boole
   return {
     paymasterService: {
       policyId: EnvVars.ALCHEMY_POLICY_ID,
+      onlyEstimation,
       erc20: {
         tokenAddress,
         postOpSettings: {
@@ -97,19 +87,26 @@ function parseWalletSendPreparedCallsBody(body: unknown): WalletSendPreparedCall
   }
 
   const parsedBody = body as Record<string, unknown>;
-  const { chainId, data } = parsedBody;
+  const { chainId, data, type } = parsedBody;
 
-  if (chainId === undefined || typeof chainId !== 'string' || chainId.length === 0) {
+  if (chainId !== undefined && (typeof chainId !== 'string' || chainId.length === 0)) {
     throw new CodedError(400, 'chainId must be a non-empty string');
   }
 
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    throw new CodedError(400, 'data must be an object');
+  if (type !== undefined && (typeof type !== 'string' || type.length === 0)) {
+    throw new CodedError(400, 'type must be a non-empty string');
+  }
+
+  if (!data || typeof data !== 'object') {
+    throw new CodedError(400, 'data must be an object or array');
+  }
+
+  if (Array.isArray(data) && data.some(item => !item || typeof item !== 'object' || Array.isArray(item))) {
+    throw new CodedError(400, 'data array items must be objects');
   }
 
   return {
     ...parsedBody,
-    chainId,
     data: data as WalletSendPreparedCallsRequestBody['data']
   };
 }
@@ -155,11 +152,55 @@ export const getAlchemyWalletRateLimitKey = (body: unknown): string | undefined 
 
   const data = typedBody.data;
 
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+  if (!data || typeof data !== 'object') {
     return undefined;
   }
 
-  const sender = (data as Record<string, unknown>).sender;
+  if (!Array.isArray(data)) {
+    const sender = (data as Record<string, unknown>).sender;
+
+    return typeof sender === 'string' ? sender : undefined;
+  }
+
+  const userOperationItem = data.find(item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      return false;
+    }
+
+    const nestedData = (item as Record<string, unknown>).data;
+    if (!nestedData || typeof nestedData !== 'object' || Array.isArray(nestedData)) {
+      return false;
+    }
+
+    return typeof (nestedData as Record<string, unknown>).sender === 'string';
+  });
+
+  if (!userOperationItem || typeof userOperationItem !== 'object' || Array.isArray(userOperationItem)) {
+    const authorizationItem = data.find(item => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        return false;
+      }
+
+      const nestedData = (item as Record<string, unknown>).data;
+      if (!nestedData || typeof nestedData !== 'object' || Array.isArray(nestedData)) {
+        return false;
+      }
+
+      return typeof (nestedData as Record<string, unknown>).address === 'string';
+    });
+
+    if (!authorizationItem || typeof authorizationItem !== 'object' || Array.isArray(authorizationItem)) {
+      return undefined;
+    }
+
+    const nestedAuthorizationData = (authorizationItem as Record<string, unknown>).data as Record<string, unknown>;
+    const address = nestedAuthorizationData.address;
+
+    return typeof address === 'string' ? address : undefined;
+  }
+
+  const nestedData = (userOperationItem as Record<string, unknown>).data as Record<string, unknown>;
+  const sender = nestedData.sender;
 
   return typeof sender === 'string' ? sender : undefined;
 };
