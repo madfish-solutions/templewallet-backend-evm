@@ -5,6 +5,8 @@ import {
   covalentWalletLimiter,
   createRateLimitMiddleware,
   everstakeLimiter,
+  initializedLimiter,
+  initializedWalletLimiter,
   lifiLimiter,
   txLimiter,
   txWalletLimiter,
@@ -79,8 +81,8 @@ apiRouter
   )
   .get(
     '/is-initialized',
-    createRateLimitMiddleware(covalentLimiter),
-    createRateLimitMiddleware(covalentWalletLimiter, walletAddressKeyGenerator),
+    createRateLimitMiddleware(initializedLimiter),
+    createRateLimitMiddleware(initializedWalletLimiter, walletAddressKeyGenerator),
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress } = await evmMultichainQueryParamsSchema.validate(req.query);
       const { items: activityItems } = await getEvmAccountActivity(walletAddress);

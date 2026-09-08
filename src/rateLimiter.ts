@@ -19,6 +19,22 @@ export const covalentWalletLimiter = new RateLimiterRedis({
   blockDuration: 60
 });
 
+export const initializedLimiter = new RateLimiterRedis({
+  storeClient: redisClient,
+  keyPrefix: 'rl-is-initialized',
+  points: 10,
+  duration: 60,
+  blockDuration: 60
+});
+
+export const initializedWalletLimiter = new RateLimiterRedis({
+  storeClient: redisClient,
+  keyPrefix: 'rl-is-initialized-wallet',
+  points: 1,
+  duration: 60,
+  blockDuration: 60
+});
+
 export const txLimiter = new RateLimiterRedis({
   storeClient: redisClient,
   keyPrefix: 'rl-transactions',

@@ -12,7 +12,7 @@ import { createRateLimiter, withRateLimiter } from './utils';
 interface Route3EvmSwapRequest {
   fee?: number;
   referrer?: string;
-  amount: number;
+  amount: string;
   slippage: number;
   src: string;
   dst: string;
