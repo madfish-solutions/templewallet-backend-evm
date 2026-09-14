@@ -20,8 +20,7 @@ const callSchema = object({ to: address(), data: hex().max(200_002), value: quan
 export const prepareSchema = object({
   from: address(),
   chainId: quantity(),
-  calls: array(callSchema).min(1).max(32).required(),
-  feeToken: address().optional()
+  calls: array(callSchema).min(1).max(32).required()
 }).noUnknown();
 
 const signatureSchema = object({ type: string().oneOf(['secp256k1']).required(), data: hex().length(132) }).noUnknown();
