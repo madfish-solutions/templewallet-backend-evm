@@ -1,4 +1,4 @@
-import { array, object, string } from 'yup';
+import { array, number, object, string } from 'yup';
 
 const address = () =>
   string()
@@ -17,10 +17,20 @@ const quantity = () =>
     .required();
 
 const callSchema = object({ to: address(), data: hex().max(200_002), value: quantity() }).noUnknown();
+const multiplierSchema = object({ multiplier: number().required() }).noUnknown();
+const capabilitiesSchema = object({
+  gasParamsOverride: object({
+    maxFeePerGas: multiplierSchema.required(),
+    maxPriorityFeePerGas: multiplierSchema.required()
+  })
+    .noUnknown()
+    .required()
+}).noUnknown();
 export const prepareSchema = object({
   from: address(),
   chainId: quantity(),
-  calls: array(callSchema).min(1).max(32).required()
+  calls: array(callSchema).min(1).max(32).required(),
+  capabilities: capabilitiesSchema.required()
 }).noUnknown();
 
 const signatureSchema = object({ type: string().oneOf(['secp256k1']).required(), data: hex().length(132) }).noUnknown();

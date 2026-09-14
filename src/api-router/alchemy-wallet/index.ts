@@ -1,8 +1,6 @@
-import axios from 'axios';
 import { Router } from 'express';
 import { RateLimiterRedis } from 'rate-limiter-flexible';
 
-import { EnvVars } from '../../config';
 import { createRateLimitMiddleware } from '../../rateLimiter';
 import { redisClient } from '../../redis';
 import { withCodedExceptionHandler } from '../../utils/express-helpers';
@@ -16,11 +14,12 @@ import {
   sendSchema,
   statusSchema
 } from './schemas';
+import { assertChain, getSubmissionSender, rpc } from './utils';
 
 const limiter = new RateLimiterRedis({
   storeClient: redisClient,
   keyPrefix: 'rl-alchemy-wallet',
-  points: 90,
+  points: 60,
   duration: 60
 });
 const walletLimiter = new RateLimiterRedis({
@@ -29,35 +28,13 @@ const walletLimiter = new RateLimiterRedis({
   points: 20,
   duration: 60
 });
-
-async function rpc(method: string, param: unknown): Promise<unknown> {
-  try {
-    const { data } = await axios.post(
-      `https://api.g.alchemy.com/v2/${EnvVars.ALCHEMY_API_KEY}`,
-      {
-        jsonrpc: '2.0',
-        id: 1,
-        method,
-        params: [param]
-      },
-      { timeout: 25_000, maxContentLength: 1_000_000 }
-    );
-    // Return JSON-RPC errors for the existing confirmation error UI.
-
-    return data;
-  } catch (error) {
-    // Axios errors contain the credential-bearing URL. Do not pass them to the logger.
-    if (axios.isAxiosError(error) && error.response?.status === 429) {
-      return { jsonrpc: '2.0', id: 1, error: { code: 429, message: 'Alchemy rate limit reached. Retry later.' } };
-    }
-
-    return { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'Alchemy is unavailable. Retry the operation.' } };
-  }
-}
-
-function assertChain(chainId: string): void {
-  if (!SUPPORTED_CHAINS.includes(Number(BigInt(chainId)))) throw new Error('Alchemy batch chain is disabled');
-}
+const submissionWalletLimiter = new RateLimiterRedis({
+  storeClient: redisClient,
+  keyPrefix: 'rl-alchemy-wallet-submit-account',
+  points: 10,
+  duration: 60,
+  blockDuration: 60
+});
 
 export const alchemyWalletRouter = Router();
 alchemyWalletRouter.use(createRateLimitMiddleware(limiter));
@@ -78,6 +55,7 @@ alchemyWalletRouter.post(
 );
 alchemyWalletRouter.post(
   '/wallet_sendPreparedCalls',
+  createRateLimitMiddleware(submissionWalletLimiter, req => getSubmissionSender(req.body)),
   withCodedExceptionHandler(async (req, res) => {
     const { type } = await sendSchema.validate(req.body, { strict: true });
     const items: unknown[] = type === 'array' ? req.body.data : [req.body];
