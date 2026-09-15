@@ -26,6 +26,7 @@ import {
 
 import { get3RouteEvmSwap, get3RouteEvmTokensWithPrices } from './3route-evm';
 import { fetchLastTransferTimestamp, fetchTransactions } from './alchemy';
+import { alchemyWalletRouter } from './alchemy-wallet';
 import { getEvmAccountActivity, getEvmBalances, getEvmCollectiblesMetadata, getEvmTokensMetadata } from './covalent';
 import { everstakeDashboardRequestsProxy, everstakeEthRequestsProxy, everstakeWalletRequestsProxy } from './everstake';
 import {
@@ -39,6 +40,7 @@ import {
 } from './lifi';
 
 export const apiRouter = Router();
+apiRouter.use('/alchemy', alchemyWalletRouter);
 
 const sendData = (data: any, res: Response<any, Record<string, any>>) => {
   try {
