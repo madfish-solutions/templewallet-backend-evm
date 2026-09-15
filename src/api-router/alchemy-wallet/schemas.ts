@@ -19,6 +19,12 @@ const quantity = () =>
 const callSchema = object({ to: address(), data: hex().max(200_002), value: quantity() }).noUnknown();
 const multiplierSchema = object({ multiplier: number().required() }).noUnknown();
 const capabilitiesSchema = object({
+  eip7702Auth: object({
+    delegation: string().oneOf(['ModularAccountV2']).required(),
+    version: string().oneOf(['v1.1.0']).required()
+  })
+    .noUnknown()
+    .required(),
   gasParamsOverride: object({
     maxFeePerGas: multiplierSchema.required(),
     maxPriorityFeePerGas: multiplierSchema.required()
