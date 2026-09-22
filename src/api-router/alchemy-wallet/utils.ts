@@ -1,6 +1,7 @@
 import axios from 'axios';
 
 import { EnvVars } from '../../config';
+import { CodedError } from '../../utils/errors';
 
 import { SUPPORTED_CHAINS } from './config';
 
@@ -17,6 +18,20 @@ export async function rpc(method: string, param: unknown): Promise<unknown> {
       { timeout: 25_000, maxContentLength: 1_000_000 }
     );
     // Return JSON-RPC errors for the existing confirmation error UI.
+
+    if (data?.error) {
+      return {
+        jsonrpc: '2.0',
+        id: 1,
+        error: {
+          code: Number.isInteger(data.error.code) ? data.error.code : -32603,
+          message: redactCredentials(String(data.error.message ?? 'Alchemy request failed')),
+          ...(data.error.data === undefined
+            ? {}
+            : { data: JSON.parse(redactCredentials(JSON.stringify(data.error.data))) })
+        }
+      };
+    }
 
     return data;
   } catch (error) {
@@ -42,5 +57,11 @@ export const getSubmissionSender = (body: unknown): string | undefined => {
 };
 
 export function assertChain(chainId: string): void {
-  if (!SUPPORTED_CHAINS.includes(Number(BigInt(chainId)))) throw new Error('Alchemy batch chain is disabled');
+  if (!SUPPORTED_CHAINS.includes(Number(BigInt(chainId)))) throw new CodedError(400, 'Alchemy batch chain is disabled');
+}
+
+function redactCredentials(value: string): string {
+  const sanitized = EnvVars.ALCHEMY_API_KEY ? value.split(EnvVars.ALCHEMY_API_KEY).join('[redacted]') : value;
+
+  return sanitized.replace(/https?:[^\s"\\]*alchemy\.com\/v2\/[^\s"\\]*/gi, '[Alchemy URL]');
 }

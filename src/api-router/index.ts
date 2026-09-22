@@ -167,7 +167,7 @@ apiRouter
   .get(
     '/swap-chains',
     createRateLimitMiddleware(lifiLimiter),
-    withCodedExceptionHandler(async (req, res) => {
+    withCodedExceptionHandler(async (_req, res) => {
       const data = await fetchSupportedSwapChainIds();
 
       res.status(200).send(data);
