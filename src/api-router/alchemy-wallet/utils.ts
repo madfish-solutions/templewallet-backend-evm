@@ -36,6 +36,17 @@ export async function rpc(method: string, param: unknown): Promise<unknown> {
     return data;
   } catch (error) {
     // Axios errors contain the credential-bearing URL. Do not pass them to the logger.
+    if (
+      method === 'wallet_sendPreparedCalls' &&
+      axios.isAxiosError(error) &&
+      (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT')
+    ) {
+      return {
+        jsonrpc: '2.0',
+        id: 1,
+        error: { code: -32098, message: 'Alchemy submission response timed out' }
+      };
+    }
     if (axios.isAxiosError(error) && error.response?.status === 429) {
       return { jsonrpc: '2.0', id: 1, error: { code: 429, message: 'Alchemy rate limit reached. Retry later.' } };
     }

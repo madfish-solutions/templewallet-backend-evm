@@ -118,6 +118,23 @@ test('returns a safe temporary error after a timeout', async () => {
     error: { code: -32000, message: 'Alchemy is unavailable. Retry the operation.' }
   });
 });
+test('identifies a submission timeout without exposing Axios details', async () => {
+  mock.method(axios, 'post', async () => {
+    throw {
+      isAxiosError: true,
+      code: 'ECONNABORTED',
+      config: { url: 'https://api.g.alchemy.com/v2/private-secret' }
+    };
+  });
+  const result = await rpc('wallet_sendPreparedCalls', operation);
+  assert.deepEqual(result, {
+    jsonrpc: '2.0',
+    id: 1,
+    error: { code: -32098, message: 'Alchemy submission response timed out' }
+  });
+  assert.doesNotMatch(JSON.stringify(result), /private-secret|config|https/);
+});
+
 test('redacts credentials from upstream error messages and nested data', async () => {
   EnvVars.ALCHEMY_API_KEY = 'test-secret';
   mock.method(axios, 'post', async () => ({
