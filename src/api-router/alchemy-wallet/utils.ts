@@ -47,6 +47,13 @@ export async function rpc(method: string, param: unknown): Promise<unknown> {
         error: { code: -32098, message: 'Alchemy submission response timed out' }
       };
     }
+    if (method === 'wallet_sendPreparedCalls' && axios.isAxiosError(error) && error.code === 'ERR_NETWORK') {
+      return {
+        jsonrpc: '2.0',
+        id: 1,
+        error: { code: -32098, message: 'Alchemy submission response unavailable' }
+      };
+    }
     if (axios.isAxiosError(error) && error.response?.status === 429) {
       return { jsonrpc: '2.0', id: 1, error: { code: 429, message: 'Alchemy rate limit reached. Retry later.' } };
     }
