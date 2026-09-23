@@ -2,7 +2,7 @@ import {
   ChainType,
   ConnectionsRequest,
   convertQuoteToRoute,
-  createConfig,
+  createClient,
   getChains,
   getQuote,
   getRoutes,
@@ -11,7 +11,7 @@ import {
   getStepTransaction,
   getTokens,
   type LiFiStep,
-  QuoteRequest,
+  QuoteRequestFromAmount,
   RoutesRequest,
   RoutesResponse,
   type SignedLiFiStep
@@ -22,7 +22,7 @@ import memoizee from 'memoizee';
 import { EnvVars } from '../config';
 import { CodedError } from '../utils/errors';
 
-createConfig({
+const lifiClient = createClient({
   integrator: 'temple',
   apiKey: EnvVars.LIFI_API_KEY,
   routeOptions: {
@@ -52,7 +52,7 @@ const withMemoizee = <T extends (...args: any[]) => Promise<unknown>>(fn: T, opt
 
 export const fetchAllSwapRoutes = withRetry(
   async (params: RoutesRequest) => {
-    const routesResponse: RoutesResponse = await getRoutes({
+    const routesResponse: RoutesResponse = await getRoutes(lifiClient, {
       fromChainId: params.fromChainId,
       fromAmount: params.fromAmount,
       fromTokenAddress: params.fromTokenAddress,
@@ -69,8 +69,8 @@ export const fetchAllSwapRoutes = withRetry(
 );
 
 export const fetchSwapRouteFromQuote = withRetry(
-  async (params: QuoteRequest) => {
-    const quote = await getQuote({
+  async (params: QuoteRequestFromAmount) => {
+    const quote = await getQuote(lifiClient, {
       fromChain: params.fromChain,
       toChain: params.toChain,
       fromToken: params.fromToken,
@@ -90,7 +90,7 @@ export const fetchSwapRouteFromQuote = withRetry(
 export const fetchSupportedSwapChainIds = withMemoizee(
   withRetry(
     async () => {
-      const chainsMetadata = await getChains({ chainTypes: [ChainType.EVM] });
+      const chainsMetadata = await getChains(lifiClient, { chainTypes: [ChainType.EVM] });
 
       return chainsMetadata.map(chain => chain.id);
     },
@@ -98,13 +98,13 @@ export const fetchSupportedSwapChainIds = withMemoizee(
   )
 );
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const fetchConnectedDestinationTokens = async (_params: ConnectionsRequest) => fetchEvmTokensMetadata();
+export const fetchConnectedDestinationTokens = async (_params: Pick<ConnectionsRequest, 'fromChain' | 'fromToken'>) =>
+  fetchEvmTokensMetadata();
 
 const fetchEvmTokensMetadata = withMemoizee(
   withRetry(
     async () => {
-      const response = await getTokens({ chainTypes: [ChainType.EVM] });
+      const response = await getTokens(lifiClient, { chainTypes: [ChainType.EVM] });
 
       return response.tokens;
     },
@@ -122,11 +122,11 @@ export const fetchTokensMetadataByChains = withMemoizee(
 );
 
 export const fetchStepTransaction = withRetry(
-  (step: LiFiStep | SignedLiFiStep) => getStepTransaction(step),
+  (step: LiFiStep | SignedLiFiStep) => getStepTransaction(lifiClient, step),
   err => new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi step transaction error')
 );
 
 export const fetchSwapStatus = withRetry(
-  (params: GetStatusRequest) => getStatus(params),
+  (params: GetStatusRequest) => getStatus(lifiClient, params),
   err => new CodedError(err?.cause?.status || err?.statusCode || 500, err?.message || 'LiFi tx status error')
 );
