@@ -20,7 +20,7 @@ const quantity = () =>
     .required();
 
 const callSchema = object({ to: address(), data: hex().max(200_002), value: quantity() }).noUnknown();
-const multiplierSchema = object({ multiplier: number().oneOf([0.7, 0.85, 1]).required() }).noUnknown();
+const multiplierSchema = object({ multiplier: number().required() }).noUnknown();
 const capabilitiesSchema = object({
   eip7702Auth: object({
     delegation: string().oneOf(['ModularAccountV2']).required(),
