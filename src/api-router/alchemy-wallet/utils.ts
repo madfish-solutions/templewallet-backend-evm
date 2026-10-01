@@ -47,12 +47,18 @@ export async function rpc(method: string, param: unknown): Promise<unknown> {
         error: { code: -32098, message: 'Alchemy submission response timed out' }
       };
     }
-    if (method === 'wallet_sendPreparedCalls' && axios.isAxiosError(error) && error.code === 'ERR_NETWORK') {
-      return {
-        jsonrpc: '2.0',
-        id: 1,
-        error: { code: -32098, message: 'Alchemy submission response unavailable' }
-      };
+    if (method === 'wallet_sendPreparedCalls' && axios.isAxiosError(error)) {
+      const neverSent = error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND';
+      const rejected = error.response !== undefined && error.response.status < 500;
+
+      // A missing response or a server error does not prove that Alchemy rejected the submission.
+      if (!neverSent && !rejected) {
+        return {
+          jsonrpc: '2.0',
+          id: 1,
+          error: { code: -32098, message: 'Alchemy submission response unavailable' }
+        };
+      }
     }
     if (axios.isAxiosError(error) && error.response?.status === 429) {
       return { jsonrpc: '2.0', id: 1, error: { code: 429, message: 'Alchemy rate limit reached. Retry later.' } };
