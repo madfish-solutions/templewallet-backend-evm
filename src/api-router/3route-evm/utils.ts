@@ -1,7 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
 import { RateLimiterRedis, RateLimiterRes } from 'rate-limiter-flexible';
 
-import { CodedError } from '../../utils/errors';
+import { CodedError, UpstreamResponseError } from '../../utils/errors';
 
 import { route3RedisClient } from './redis';
 
@@ -17,6 +17,18 @@ export const createUpstreamApi = (baseURL: string, headers?: Record<string, stri
   api.interceptors.response.use(undefined, (error: unknown) => {
     if (axios.isAxiosError(error)) {
       const status = error.response?.status;
+      const body: unknown = error.response?.data;
+      if (
+        status !== undefined &&
+        status >= 400 &&
+        status <= 599 &&
+        typeof body === 'object' &&
+        body !== null &&
+        !Array.isArray(body)
+      ) {
+        return Promise.reject(new UpstreamResponseError(status, body));
+      }
+
       const code = error.code === 'ECONNABORTED' || error.code === 'ERR_CANCELED' ? 504 : 502;
 
       return Promise.reject(
