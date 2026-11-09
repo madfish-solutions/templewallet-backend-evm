@@ -125,7 +125,13 @@ export const get3RouteEvmTokensWithPrices = async () => {
 
 const fetchRawEvmSwap = withRateLimiter(route3ApiRateLimiter, async (params: Route3EvmSwapRequest) => {
   const { data } = await route3Api.get<Route3EvmSwapResponse>('/api/v6.1/42793/swap', {
-    params: { ...params, includeProtocols: true }
+    params: {
+      ...params,
+      includeProtocols: true,
+      // stXTZ/WXTZ Curve pool (0x74d80ee400d3026fdd2520265cc98300710b25d4) stale oracle causes swaps to revert.
+      // Failed swap example: https://explorer.etherlink.com/tx/0x84398066b3036a25d50e2f01e672730cea2449b6581f8c5f712895fb36f70667
+      excludedProtocols: 'CurveFi/Stable'
+    }
   });
 
   return data;
