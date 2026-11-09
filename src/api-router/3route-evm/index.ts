@@ -59,7 +59,15 @@ interface Route3EvmTokens {
   >;
 }
 
+interface TokenPrice {
+  priceUSD: string;
+  updatedAt: number;
+}
+
+type TokenPrices = Record<string, TokenPrice>;
+
 const xtzAddress = '0x0000000000000000000000000000000000000000';
+const PRICE_RETAIN_MS = 10 * 60_000;
 
 const route3Api = createUpstreamApi('https://temple-evm.3route.io', {
   Authorization: `Bearer ${EnvVars.ROUTE3_EVM_API_KEY}`
@@ -85,8 +93,8 @@ const priceCache = createSharedCache({
   store: route3RedisClient,
   key: 'cache:3route:42793:prices:v1',
   freshMs: 60_000,
-  retainMs: 10 * 60_000,
-  fetcher: async (): Promise<Record<string, string>> => {
+  retainMs: PRICE_RETAIN_MS,
+  fetcher: async (previous: TokenPrices | undefined): Promise<TokenPrices> => {
     const { tokens } = await tokenCache.get();
     const addresses = Object.keys(tokens)
       .map(address => address.toLowerCase())
@@ -98,28 +106,43 @@ const priceCache = createSharedCache({
     ]);
     const etherlinkPrices = etherlinkResult.status === 'fulfilled' ? etherlinkResult.value : {};
     const missing = addresses.filter(address => !etherlinkPrices[address]);
-    const geckoPrices = await getGeckoterminalExchangeRates(missing, context);
+    const geckoPrices = await getGeckoterminalExchangeRates(missing, { signal: AbortSignal.timeout(10_000) });
     const prices: Record<string, string> = { ...geckoPrices, ...etherlinkPrices };
     if (xtzResult.status === 'fulfilled' && xtzResult.value) prices[xtzAddress] = xtzResult.value;
     if (Object.keys(prices).length === 0) throw new Error('Token prices are unavailable.');
 
-    return prices;
+    const now = Date.now();
+    const retained = Object.fromEntries(
+      Object.entries(previous ?? {}).filter(([, price]) => now - price.updatedAt < PRICE_RETAIN_MS)
+    );
+
+    return {
+      ...retained,
+      ...Object.fromEntries(
+        Object.entries(prices).map(([address, priceUSD]) => [address, { priceUSD, updatedAt: now }])
+      )
+    };
   }
 });
 
 export const get3RouteEvmTokensWithPrices = async () => {
   const [{ tokens }, prices = {}] = await Promise.all([tokenCache.get(), priceCache.getOptional()]);
+  const now = Date.now();
 
   return Object.fromEntries(
-    Object.entries(tokens).map(([address, token]) => [
-      getAddress(address),
-      {
-        ...token,
-        address: getAddress(token.address),
-        logoURI: token.logoURI || undefined,
-        priceUSD: prices[address.toLowerCase()]
-      }
-    ])
+    Object.entries(tokens).map(([address, token]) => {
+      const price = prices[address.toLowerCase()];
+
+      return [
+        getAddress(address),
+        {
+          ...token,
+          address: getAddress(token.address),
+          logoURI: token.logoURI || undefined,
+          priceUSD: price && now - price.updatedAt < PRICE_RETAIN_MS ? price.priceUSD : undefined
+        }
+      ];
+    })
   );
 };
 

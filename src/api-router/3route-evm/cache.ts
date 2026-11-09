@@ -18,7 +18,7 @@ interface SharedCacheOptions<T> {
   key: string;
   freshMs: number;
   retainMs: number;
-  fetcher: () => Promise<T>;
+  fetcher: (previous: T | undefined) => Promise<T>;
 }
 
 interface SharedCache<T> {
@@ -82,7 +82,7 @@ export const createSharedCache = <T>({
       // Use the local refresh if Redis is unavailable.
     }
     try {
-      const value = await fetcher();
+      const value = await fetcher((await read())?.value);
       const entry = { value, updatedAt: Date.now() };
       if (locked) {
         try {
