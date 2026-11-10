@@ -27,6 +27,7 @@ import {
 
 import { get3RouteEvmSwap, get3RouteEvmTokensWithPrices } from './3route-evm/index.js';
 import { fetchLastTransferTimestamp, fetchTransactions } from './alchemy/index.js';
+import { alchemyWalletRouter } from './alchemy-wallet/index.js';
 import { collectiblesV2Router } from './collectibles-v2/index.js';
 import { getEvmAccountActivity, getEvmBalances, getEvmCollectiblesMetadata, getEvmTokensMetadata } from './covalent.js';
 import {
@@ -45,6 +46,7 @@ import {
 } from './lifi.js';
 
 export const apiRouter = Router();
+apiRouter.use('/alchemy', alchemyWalletRouter);
 
 apiRouter
   .get(
@@ -159,7 +161,7 @@ apiRouter
   .get(
     '/swap-chains',
     createRateLimitMiddleware(lifiLimiter),
-    withCodedExceptionHandler(async (req, res) => {
+    withCodedExceptionHandler(async (_req, res) => {
       const data = await fetchSupportedSwapChainIds();
 
       res.status(200).send(data);
