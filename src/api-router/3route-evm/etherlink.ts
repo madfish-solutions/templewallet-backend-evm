@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-import { createRateLimiter, withRateLimiter } from './utils';
+import { withRateLimitWaiting } from '../../utils/rate-limiting.js';
+
+import { createRateLimiter } from './utils.js';
 
 type PageParams = Record<string, string | number | boolean | null>;
 
@@ -25,13 +27,13 @@ interface EtherlinkStats {
 
 const etherlinkApiLimiter = createRateLimiter('rl-etherlink-api', 10, 1);
 
-export const getXtzPrice = withRateLimiter(etherlinkApiLimiter, async () => {
+export const getXtzPrice = withRateLimitWaiting(etherlinkApiLimiter, async () => {
   const { data } = await axios.get<EtherlinkStats>('https://explorer.etherlink.com/api/v2/stats');
 
   return data.coin_price;
 });
 
-const getTokensPage = withRateLimiter(etherlinkApiLimiter, async (pageParams: PageParams | null) => {
+const getTokensPage = withRateLimitWaiting(etherlinkApiLimiter, async (pageParams: PageParams | null) => {
   const { data } = await axios.get<EtherlinkTokensPage>('https://explorer.etherlink.com/api/v2/tokens', {
     params: {
       type: 'ERC-20',

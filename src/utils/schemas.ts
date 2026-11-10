@@ -1,12 +1,13 @@
 import { isAddress } from '@ethersproject/address';
-import { object as objectSchema, string as stringSchema, number as numberSchema } from 'yup';
+import { object as objectSchema, string as stringSchema, number as numberSchema, boolean as booleanSchema } from 'yup';
 
-const addressSchema = stringSchema().test(
+export const addressSchema = stringSchema().test(
   'is-valid-address',
   'Invalid address',
   value => value === undefined || isAddress(value)
 );
-const naturalNumberSchema = numberSchema().integer().min(1);
+export const naturalNumberSchema = numberSchema().integer().min(1);
+export const nonNegativeNumberStringSchema = stringSchema().matches(/^\d+$/, 'must be a non-negative integer');
 const naturalNumberStringSchema = stringSchema().matches(/^[1-9]\d*$/, 'must be a positive integer');
 
 export const evmMultichainQueryParamsSchema = objectSchema().shape({
@@ -16,6 +17,18 @@ export const evmMultichainQueryParamsSchema = objectSchema().shape({
 export const evmQueryParamsSchema = objectSchema().shape({
   walletAddress: addressSchema.clone().required('walletAddress is undefined'),
   chainId: naturalNumberSchema.clone().required('chainId is undefined')
+});
+
+export const evmQueryParamsCollectiblesSchema = objectSchema().shape({
+  walletAddress: addressSchema.clone().required('walletAddress is undefined'),
+  chainId: naturalNumberSchema.clone().required('chainId is undefined'),
+  showSpam: booleanSchema().default(false)
+});
+
+export const covalentBalancesQueryParamsSchema = objectSchema().shape({
+  walletAddress: addressSchema.clone().required('walletAddress is undefined'),
+  chainId: naturalNumberSchema.clone().required('chainId is undefined'),
+  includeNfts: booleanSchema().default(true)
 });
 
 export const evmQueryParamsTransactionsSchema = objectSchema().shape({

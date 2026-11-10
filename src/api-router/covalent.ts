@@ -8,12 +8,12 @@ import {
 } from '@covalenthq/client-sdk';
 import memoizee from 'memoizee';
 
-import { COVALENT_ATTEMPTS, COVALENT_BACKOFF_DELAY, COVALENT_CONCURRENCY, COVALENT_RPS, EnvVars } from '../config';
-import { getCacheKey, withRedisCache } from '../utils/cache';
-import { CodedError } from '../utils/errors';
-import { createQueuedFetchJobs } from '../utils/queued-fetch-jobs';
+import { COVALENT_ATTEMPTS, COVALENT_BACKOFF_DELAY, COVALENT_CONCURRENCY, COVALENT_RPS, EnvVars } from '../config.js';
+import { getCacheKey, withRedisCache } from '../utils/cache.js';
+import { CodedError } from '../utils/errors.js';
+import { createQueuedFetchJobs } from '../utils/queued-fetch-jobs.js';
 
-import { Serializable, toSerializable } from './utils';
+import { Serializable, toSerializable } from './utils.js';
 
 const client = new GoldRushClient(EnvVars.COVALENT_API_KEY, { enableRetry: false, threadCount: COVALENT_CONCURRENCY });
 
@@ -23,6 +23,11 @@ type CovalentQueueJobName = 'accountActivity' | CovalentOneChainJobName;
 interface CovalentQueueJobsInputs extends Record<CovalentOneChainJobName, { walletAddress: string; chainId: number }> {
   accountActivity: {
     walletAddress: string;
+  };
+  balances: {
+    walletAddress: string;
+    chainId: number;
+    includeNfts?: boolean;
   };
 }
 
@@ -57,8 +62,18 @@ const CACHE_TTLS = {
   collectiblesMetadata: 60 * 60 * 24
 } as const;
 
-const getCovalentCacheKey = (name: CovalentQueueJobName, walletAddress: string, chainId?: number) =>
-  getCacheKey('covalent', [name, walletAddress.toLowerCase(), chainId]);
+const getCovalentCacheKey = (
+  name: CovalentQueueJobName,
+  walletAddress: string,
+  chainId?: number,
+  includeNfts?: boolean
+) =>
+  getCacheKey(
+    'covalent',
+    includeNfts === false
+      ? [name, walletAddress.toLowerCase(), chainId, 'false']
+      : [name, walletAddress.toLowerCase(), chainId]
+  );
 
 const fetchGoldrushSupportedChains = memoizee(
   async (): Promise<number[]> => {
@@ -114,7 +129,7 @@ async function getCovalentResponse(
       response = await client.BalanceService.getTokenBalancesForWalletAddress(
         data.chainId as ChainID,
         data.walletAddress,
-        { nft: true, noNftAssetMetadata: true, quoteCurrency: 'USD', noSpam: true }
+        { nft: data.includeNfts ?? true, noNftAssetMetadata: true, quoteCurrency: 'USD', noSpam: true }
       );
       break;
     case 'tokensMetadata':
@@ -184,9 +199,9 @@ const { fetch, queue } = createQueuedFetchJobs<CovalentQueueJobName, CovalentQue
 
 export const covalentRequestsQueue = queue;
 
-export const getEvmBalances = memoizeAsync((walletAddress: string, chainId: number) =>
-  withRedisCache(getCovalentCacheKey('balances', walletAddress, chainId), CACHE_TTLS.balances, () =>
-    fetch('balances', { walletAddress, chainId })
+export const getEvmBalances = memoizeAsync((walletAddress: string, chainId: number, includeNfts: boolean) =>
+  withRedisCache(getCovalentCacheKey('balances', walletAddress, chainId, includeNfts), CACHE_TTLS.balances, () =>
+    fetch('balances', { walletAddress, chainId, includeNfts })
   )
 );
 

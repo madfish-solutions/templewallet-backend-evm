@@ -1,10 +1,10 @@
 import { Queue, QueueEvents, UnrecoverableError, Worker } from 'bullmq';
 import { RateLimiterRedis, RateLimiterRes } from 'rate-limiter-flexible';
 
-import { IS_TESTING } from '../config';
-import { redisClient } from '../redis';
+import { IS_TESTING } from '../config.js';
+import { redisClient } from '../redis.js';
 
-import { CodedError } from './errors';
+import { CodedError } from './errors.js';
 
 interface QueuedFetchJobsConfig<
   Name extends string,

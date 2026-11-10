@@ -19,8 +19,8 @@ import {
 import retry from 'async-retry';
 import memoizee from 'memoizee';
 
-import { EnvVars } from '../config';
-import { CodedError } from '../utils/errors';
+import { EnvVars } from '../config.js';
+import { CodedError } from '../utils/errors.js';
 
 createConfig({
   integrator: 'temple',

@@ -4,7 +4,7 @@
   "compilerOptions": {
     /* Basic Options */
     "target": "ES2020",
-    "module": "commonjs",
+    "module": "Node16",
     "lib": ["esnext"],
     "allowJs": true,
     "sourceMap": true,
@@ -17,7 +17,7 @@
     "noImplicitAny": false,
 
     /* Module Resolution Options */
-    "moduleResolution": "node",
+    "moduleResolution": "node16",
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
