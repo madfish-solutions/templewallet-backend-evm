@@ -40,9 +40,9 @@ interface CovalentQueueJobsOutputs {
 
 function getCovalentJobDeduplicationId(
   name: CovalentQueueJobName,
-  { walletAddress, chainId }: { walletAddress: string; chainId?: number }
+  { walletAddress, chainId, includeNfts }: { walletAddress: string; chainId?: number; includeNfts?: boolean }
 ) {
-  return `${name}:${walletAddress.toLowerCase()}:${chainId}`;
+  return `${name}:${walletAddress.toLowerCase()}:${chainId}:${includeNfts}`;
 }
 const NOT_SUPPORTED_CHAIN_ERROR_REGEX =
   /^\d+\/[a-z0-9-]+ chain not supported, currently supports:(\s*\d+\/[a-z0-9-]+)+/i;
