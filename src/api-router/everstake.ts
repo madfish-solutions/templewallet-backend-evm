@@ -1,8 +1,8 @@
 import axios, { AxiosResponse, RawAxiosRequestHeaders } from 'axios';
 import { IncomingHttpHeaders } from 'http';
-import { omit } from 'lodash';
+import omit from 'lodash/omit.js';
 
-import logger from '../utils/logger';
+import logger from '../utils/logger.js';
 
 class NotAllowedMethodError extends Error {
   constructor(message: string) {

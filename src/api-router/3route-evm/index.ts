@@ -3,11 +3,12 @@ import axios from 'axios';
 import Big from 'big.js';
 import memoizee from 'memoizee';
 
-import { EnvVars } from '../../config';
+import { EnvVars } from '../../config.js';
+import { withRateLimitWaiting } from '../../utils/rate-limiting.js';
 
-import { getEtherlinkExchangeRates, getXtzPrice } from './etherlink';
-import { getGeckoterminalExchangeRates } from './geckoterminal';
-import { createRateLimiter, withRateLimiter } from './utils';
+import { getEtherlinkExchangeRates, getXtzPrice } from './etherlink.js';
+import { getGeckoterminalExchangeRates } from './geckoterminal.js';
+import { createRateLimiter } from './utils.js';
 
 interface Route3EvmSwapRequest {
   fee?: number;
@@ -83,7 +84,7 @@ const route3Api = axios.create({
 
 const route3ApiRateLimiter = createRateLimiter('rl-route3-api', 10, 1);
 
-const fetchRawEvmTokens = withRateLimiter(route3ApiRateLimiter, async () => {
+const fetchRawEvmTokens = withRateLimitWaiting(route3ApiRateLimiter, async () => {
   const { data } = await route3Api.get<Route3EvmTokens>('/api/v6.1/42793/tokens');
 
   return data;
@@ -105,7 +106,7 @@ export const get3RouteEvmTokensWithPrices = memoizee(
   { promise: true, maxAge: 20000 }
 );
 
-const fetchRawEvmSwap = withRateLimiter(route3ApiRateLimiter, async (params: Route3EvmSwapRequest) => {
+const fetchRawEvmSwap = withRateLimitWaiting(route3ApiRateLimiter, async (params: Route3EvmSwapRequest) => {
   const { data } = await route3Api.get<Route3EvmSwapResponse>('/api/v6.1/42793/swap', {
     params: { ...params, includeProtocols: true }
   });
@@ -116,7 +117,7 @@ const fetchRawEvmSwap = withRateLimiter(route3ApiRateLimiter, async (params: Rou
 const getAmountUSD = (amount: string, decimals: number, priceUSD: string | undefined) =>
   priceUSD ? new Big(amount).div(new Big(10).pow(decimals)).mul(priceUSD).round(2, Big.roundDown).toFixed() : '0.00';
 
-export const get3RouteEvmSwap = withRateLimiter(route3ApiRateLimiter, async (params: Route3EvmSwapRequest) => {
+export const get3RouteEvmSwap = withRateLimitWaiting(route3ApiRateLimiter, async (params: Route3EvmSwapRequest) => {
   const [{ srcAmount, dstAmount, tx, protocols }, tokensWithPrices] = await Promise.all([
     fetchRawEvmSwap(params),
     get3RouteEvmTokensWithPrices()

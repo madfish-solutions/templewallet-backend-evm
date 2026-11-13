@@ -1,9 +1,9 @@
 import axios from 'axios';
 
-import { EnvVars } from '../../config';
-import { CodedError } from '../../utils/errors';
+import { EnvVars } from '../../config.js';
+import { CodedError } from '../../utils/errors.js';
 
-import { SUPPORTED_CHAINS } from './config';
+import { SUPPORTED_CHAINS } from './config.js';
 
 export async function rpc(method: string, param: unknown): Promise<unknown> {
   try {

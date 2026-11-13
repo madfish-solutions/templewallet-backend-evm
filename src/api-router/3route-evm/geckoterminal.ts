@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-import { createRateLimiter, withRateLimiter } from './utils';
+import { withRateLimitWaiting } from '../../utils/rate-limiting.js';
+
+import { createRateLimiter } from './utils.js';
 
 /** These types are not complete, they're just a subset of the full response */
 interface GeckoterminalEntityBase {
@@ -50,7 +52,7 @@ interface GeckoterminalPoolsPage {
 
 const geckoterminalApiLimiter = createRateLimiter('rl-geckoterminal-api', 30, 60);
 
-const getPoolsPage = withRateLimiter(geckoterminalApiLimiter, async (pageNumber: number) => {
+const getPoolsPage = withRateLimitWaiting(geckoterminalApiLimiter, async (pageNumber: number) => {
   const { data } = await axios.get<GeckoterminalPoolsPage>(
     'https://api.geckoterminal.com/api/v2/networks/etherlink/pools',
     { params: { include: 'base_token,quote_token', page: pageNumber, sort: 'h24_volume_usd_desc' } }
