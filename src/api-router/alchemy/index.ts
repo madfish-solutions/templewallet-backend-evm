@@ -15,7 +15,7 @@ import {
 import { fetchTransfers } from './fetchers/transfers.js';
 import { fetch } from './queued-fetch-jobs.js';
 import { AlchemyQueueJobsInputs, FetchTransactionsResponse } from './types.js';
-import { getAlchemyCacheKey } from './utils.js';
+import { getAlchemyCacheKey, getAlchemyCacheKeyFromObject } from './utils.js';
 
 export { queue as alchemyRequestsQueue } from './queued-fetch-jobs.js';
 
@@ -138,13 +138,39 @@ export async function fetchTransactions(
 }
 
 export function fetchEvmCollectibles(input: Omit<AlchemyQueueJobsInputs['nftsForOwner'], 'nftsReqId'>) {
-  const nftsReqId = uniqueId('nftsReqId-');
+  const cacheKey = getAlchemyCacheKeyFromObject('nftsForOwner', input, [
+    'chainId',
+    'accAddress',
+    'contractAddresses',
+    'withMetadata',
+    'orderBy',
+    'pageKey',
+    'excludeFilters',
+    'includeFilters',
+    'spamConfidenceLevel'
+  ]);
 
-  return fetch('nftsForOwner', { nftsReqId, ...input });
+  return withRedisCache(cacheKey, CACHE_TTLS.nftsForOwner, () => {
+    const nftsReqId = uniqueId('nftsReqId-');
+
+    return fetch('nftsForOwner', { nftsReqId, ...input });
+  });
 }
 
 export function fetchEvmCollectiblesContracts(input: Omit<AlchemyQueueJobsInputs['contractsForOwner'], 'nftsReqId'>) {
-  const nftsReqId = uniqueId('nftsReqId-');
+  const cacheKey = getAlchemyCacheKeyFromObject('contractsForOwner', input, [
+    'chainId',
+    'accAddress',
+    'orderBy',
+    'pageKey',
+    'excludeFilters',
+    'includeFilters',
+    'spamConfidenceLevel'
+  ]);
 
-  return fetch('contractsForOwner', { nftsReqId, ...input });
+  return withRedisCache(cacheKey, CACHE_TTLS.contractsForOwner, () => {
+    const nftsReqId = uniqueId('nftsReqId-');
+
+    return fetch('contractsForOwner', { nftsReqId, ...input });
+  });
 }

@@ -80,7 +80,8 @@ export const APPROVALS_REQUESTS_LIMIT_PER_TXS_REQUEST = 3;
 export const CACHE_TTLS = {
   transactions: 10,
   lastTransferTimestamp: 10,
-  nftsForOwner: 10
+  nftsForOwner: 20,
+  contractsForOwner: 20
 } as const;
 export const alchemyRequestsCosts: Record<AlchemyQueueJobName, number> = {
   assetTransfers: 120,

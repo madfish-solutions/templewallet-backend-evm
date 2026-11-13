@@ -110,8 +110,11 @@ const makeRateLimitConsumer =
   };
 
 export class AbortedError extends Error {
-  constructor() {
+  public readonly isTimeout: boolean;
+
+  constructor(signal?: AbortSignal) {
     super('Aborted');
+    this.isTimeout = signal?.reason?.name === 'TimeoutError';
   }
 }
 
@@ -125,14 +128,38 @@ export const withRateLimitWaiting = <A extends unknown[], R>(
     const abortSignal = getAbortSignal(...args);
     while (!consumed) {
       if (abortSignal?.aborted) {
-        throw new AbortedError();
+        throw new AbortedError(abortSignal);
       }
 
       try {
         await limiter.consume('backend');
         consumed = true;
       } catch (e) {
-        if (e instanceof RateLimiterRes) {
+        if (abortSignal?.aborted) {
+          throw new AbortedError(abortSignal);
+        }
+
+        if (e instanceof RateLimiterRes && abortSignal) {
+          let onAbort: () => void;
+          let stopWaiting: () => void;
+          const waitForAbortionPromise = new Promise<void>((resolve, reject) => {
+            onAbort = () => reject(new AbortedError(abortSignal));
+            stopWaiting = () => {
+              abortSignal.removeEventListener('abort', onAbort);
+              resolve();
+            };
+            abortSignal.addEventListener('abort', () => onAbort());
+          });
+          await Promise.race([
+            new Promise<void>(resolve =>
+              setTimeout(() => {
+                stopWaiting();
+                resolve();
+              }, e.msBeforeNext)
+            ),
+            waitForAbortionPromise
+          ]);
+        } else if (e instanceof RateLimiterRes) {
           await new Promise(resolve => setTimeout(resolve, e.msBeforeNext));
         } else {
           throw e;

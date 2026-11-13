@@ -33,12 +33,12 @@ const openseaGlobalApiRateLimiter = createRateLimiter(
 );
 
 const makeNftsBatchRequest = withRateLimitWaiting<
-  [sdk: OpenSeaSDK, request: BatchNftsRequest, signal: AbortSignal],
+  [signal: AbortSignal, sdk: OpenSeaSDK, request: BatchNftsRequest],
   NftBatchResponse
 >(
   openseaGlobalApiRateLimiter,
-  (sdk, request) => sdk.api.nfts.getNFTsBatch({ identifiers: request.identifiers }),
-  (_, _2, signal) => signal
+  (_, sdk, request) => sdk.api.nfts.getNFTsBatch({ identifiers: request.identifiers }),
+  signal => signal
 );
 
 type SearchAssetType = 'collection' | 'nft' | 'token' | 'account';
@@ -54,27 +54,53 @@ type AccountNftsWireResponse = {
 };
 export type OpenseaAccountNft = NFT & { quantity: number; quantityString: string };
 
+interface AccountNftsRequestArgs {
+  sdk: OpenSeaSDK;
+  address: string;
+  signal: AbortSignal;
+  collection?: string;
+  next?: string;
+}
 const makeAccountNftsRequest = withRateLimitWaiting(
   openseaGlobalApiRateLimiter,
-  (sdk: OpenSeaSDK, address: string, collection?: string, next?: string) =>
+  ({ sdk, address, collection, next }: AccountNftsRequestArgs) =>
     sdk.api.get<AccountNftsWireResponse>(`/api/v2/chain/${sdk.chain}/account/${address}/nfts`, {
       limit: 200,
       next,
       includeAutoHidden: true,
       collection
-    })
+    }),
+  ({ signal }) => signal
 );
 
+interface AccountCollectionsRequestArgs {
+  sdk: OpenSeaSDK;
+  address: string;
+  signal: AbortSignal;
+  chains?: EvmOpenseaChain[];
+  limit?: number;
+  after?: string;
+}
 const makeAccountCollectionsRequest = withRateLimitWaiting(
   openseaGlobalApiRateLimiter,
-  (sdk: OpenSeaSDK, address: string, chains?: EvmOpenseaChain[], limit?: number, after?: string) =>
-    sdk.api.accounts.getProfileCollections(address, { after, limit, chains })
+  ({ sdk, address, chains, limit, after }: AccountCollectionsRequestArgs) =>
+    sdk.api.accounts.getProfileCollections(address, { after, limit, chains }),
+  ({ signal }) => signal
 );
 
+interface SearchRequestArgs {
+  sdk: OpenSeaSDK;
+  query: string;
+  signal: AbortSignal;
+  assetTypes: SearchAssetType[];
+  chains?: EvmOpenseaChain[];
+  limit?: number;
+}
 const makeSearchRequest = withRateLimitWaiting(
   openseaGlobalApiRateLimiter,
-  (sdk: OpenSeaSDK, query: string, assetTypes: SearchAssetType[], chains?: EvmOpenseaChain[], limit?: number) =>
-    sdk.api.search({ query, assetTypes, chains, limit })
+  ({ sdk, query, assetTypes, chains, limit }: SearchRequestArgs) =>
+    sdk.api.search({ query, assetTypes, chains, limit }),
+  ({ signal }) => signal
 );
 
 const getOpenseaSdk = memoizee(
@@ -113,7 +139,7 @@ const getContractIdKey = (contractAddress: string, tokenId: string) =>
   `${contractAddress.toLowerCase()}-${tokenId.toLowerCase()}`;
 
 const updateNftMetadataCache = (values: Record<string, OpenseaNftCacheEntry>, now: number) =>
-  setCachedHmValues(nftMetadataCacheHmKey, values, 1e9, 1e6, now);
+  setCachedHmValues(nftMetadataCacheHmKey, values, 1e6, now);
 
 export const getCachedNftsByRefs = async (request: NftRef[]) => {
   const hmHashKeys = getNftMetadataCacheKeys(request);
@@ -141,10 +167,9 @@ export const getNftsByRefs = async (request: NftRef[]) => {
       ...restProps
     }));
 
-  const abortSignal = AbortSignal.timeout(60000);
   now = Date.now();
   const { nfts } = requestInput.length
-    ? await makeNftsBatchRequest(sdk, { identifiers: requestInput }, abortSignal)
+    ? await makeNftsBatchRequest(AbortSignal.timeout(60000), sdk, { identifiers: requestInput })
     : { nfts: [] };
   const openseaNftsByContractIdKeys = Object.fromEntries(
     nfts.map(nft => {
@@ -188,7 +213,13 @@ export const getAccountNfts = async (address: string, chainId: number, collectio
       }
 
       const now = Date.now();
-      const data = await makeAccountNftsRequest(getOpenseaSdk(chainId), address, collection, next);
+      const data = await makeAccountNftsRequest({
+        sdk: getOpenseaSdk(chainId),
+        address,
+        signal: AbortSignal.timeout(60000),
+        collection,
+        next
+      });
       const hmHashKeys = getNftMetadataCacheKeys(
         data.nfts.map(nft => ({ contractAddress: nft.contract, tokenId: nft.identifier, chainId }))
       );
@@ -219,7 +250,14 @@ export const getAccountCollections = async (address: string, chainIds?: number[]
         return { collections: [], next: null };
       }
 
-      return await makeAccountCollectionsRequest(getOpenseaSdk(), address, relevantChains, limit, after);
+      return await makeAccountCollectionsRequest({
+        sdk: getOpenseaSdk(),
+        address,
+        signal: AbortSignal.timeout(60000),
+        chains: relevantChains,
+        limit,
+        after
+      });
     }
   );
 
@@ -239,6 +277,13 @@ export const getOpenseaSearch = async (
         return { results: [], next: null };
       }
 
-      return await makeSearchRequest(getOpenseaSdk(), query, assetTypes, relevantChains, limit);
+      return await makeSearchRequest({
+        sdk: getOpenseaSdk(),
+        query,
+        signal: AbortSignal.timeout(60000),
+        assetTypes,
+        chains: relevantChains,
+        limit
+      });
     }
   );

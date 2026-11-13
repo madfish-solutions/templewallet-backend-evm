@@ -49,27 +49,11 @@ const getCacheHmRanksKey = (hmKey: string) => `ranks:${hmKey}`;
 export const setCachedHmValues = async <T>(
   hmKey: string,
   values: Record<string, T>,
-  ttlSeconds: number,
   maxSize: number,
   rank = Date.now()
 ) => {
   try {
     const inputKeys = Object.keys(values);
-    const hsetexArgs: [
-      key: string,
-      secondsToken: 'EX',
-      seconds: number,
-      fieldsToken: 'FIELDS',
-      numfields: number,
-      ...data: (string | Buffer | number)[]
-    ] = [
-      hmKey,
-      'EX',
-      ttlSeconds,
-      'FIELDS',
-      inputKeys.length,
-      ...Object.entries(values).flatMap(([key, value]) => [key, serializeCacheValue(value)])
-    ];
     const ranksKey = getCacheHmRanksKey(hmKey);
     const zaddArgs: [key: string, ...scoreMembers: (string | number)[]] = [
       ranksKey,
@@ -84,7 +68,7 @@ export const setCachedHmValues = async <T>(
       pipeline.hdel(hmKey, ...lowestElements);
     }
     pipeline.zadd(...zaddArgs);
-    pipeline.hsetex(...hsetexArgs);
+    pipeline.hset(hmKey, ...Object.entries(values).flatMap(([key, value]) => [key, serializeCacheValue(value)]));
 
     return await pipeline.exec();
   } catch {

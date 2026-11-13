@@ -80,6 +80,9 @@ export const createQueuedFetchJobs = <
             await rateLimiter.consume('points', costs[name]);
             res();
           } catch (e) {
+            if (e instanceof RateLimiterRes) {
+              await rateLimiter.reward('points', costs[name]);
+            }
             if (Date.now() - waitStartTs > rateLimitTimeout) {
               rej(new UnrecoverableError('Timed out'));
             } else {

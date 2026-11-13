@@ -43,3 +43,8 @@ export const formatDeduplicationId = (separatorIndex: number, ...parts: PartValu
 
 export const getAlchemyCacheKey = (queryName: string, ...parts: PartValue[]) =>
   getCacheKey('alchemy', [queryName].concat(parts.map(part => formatDeduplicationId(1, part))));
+export const getAlchemyCacheKeyFromObject = <K extends string>(
+  queryName: string,
+  obj: Partial<Record<K, PartValue>>,
+  keys: K[]
+) => getAlchemyCacheKey(queryName, ...keys.map(key => obj[key]));

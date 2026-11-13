@@ -4,6 +4,7 @@ import { ValidationError } from 'yup';
 
 import { CodedError } from './errors.js';
 import logger from './logger.js';
+import { AbortedError } from './rate-limiting.js';
 
 export const withCodedExceptionHandler =
   (handler: RequestHandler): RequestHandler =>
@@ -22,6 +23,8 @@ export const withCodedExceptionHandler =
           .status(503)
           .setHeader('Retry-After', Math.ceil(error.msBeforeNext / 1000).toString())
           .send({ message: 'Rate limit exceeded' });
+      } else if (error instanceof AbortedError && error.isTimeout) {
+        res.status(504).send({ message: 'Request timed out' });
       } else {
         res.status(500).send({ message: error?.message });
       }
