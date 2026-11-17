@@ -7,6 +7,15 @@ interface CodedErrorForResponse {
 
 type StatusCodeNumber = (typeof StatusCodes)[keyof typeof StatusCodes];
 
+export class UpstreamResponseError extends Error {
+  constructor(
+    public status: number,
+    public body: object
+  ) {
+    super('The upstream request failed.');
+  }
+}
+
 export class CodedError extends Error {
   constructor(
     public code: StatusCodeNumber,

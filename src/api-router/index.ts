@@ -220,11 +220,17 @@ apiRouter
   .use('/everstake-wallet', createRateLimitMiddleware(everstakeLimiter), everstakeWalletRequestsProxy)
   .use('/everstake-dashboard', createRateLimitMiddleware(everstakeLimiter), everstakeDashboardRequestsProxy)
   .use('/everstake-eth-api', createRateLimitMiddleware(everstakeLimiter), everstakeEthRequestsProxy)
-  .get('/3route-tokens', async (_req, res) => {
-    sendData(await get3RouteEvmTokensWithPrices(), res);
-  })
-  .get('/3route-swap', async (req, res) => {
-    const { src, dst, amount, from, slippage, referrer, fee } = await route3SwapQuerySchema.validate(req.query);
+  .get(
+    '/3route-tokens',
+    withCodedExceptionHandler(async (_req, res) => {
+      sendData(await get3RouteEvmTokensWithPrices(), res);
+    })
+  )
+  .get(
+    '/3route-swap',
+    withCodedExceptionHandler(async (req, res) => {
+      const { src, dst, amount, from, slippage, referrer, fee } = await route3SwapQuerySchema.validate(req.query);
 
-    sendData(await get3RouteEvmSwap({ src, dst, amount, from, slippage, referrer, fee }), res);
-  });
+      sendData(await get3RouteEvmSwap({ src, dst, amount, from, slippage, referrer, fee }), res);
+    })
+  );

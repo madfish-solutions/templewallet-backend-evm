@@ -1,13 +1,14 @@
 import { getAddress } from '@ethersproject/address';
-import axios from 'axios';
 import Big from 'big.js';
-import memoizee from 'memoizee';
 
 import { EnvVars } from '../../config';
+import { CodedError } from '../../utils/errors';
 
+import { createSharedCache } from './cache';
 import { getEtherlinkExchangeRates, getXtzPrice } from './etherlink';
 import { getGeckoterminalExchangeRates } from './geckoterminal';
-import { createRateLimiter, withRateLimiter } from './utils';
+import { route3RedisClient } from './redis';
+import { createRateLimiter, createUpstreamApi, withRateLimiter } from './utils';
 
 interface Route3EvmSwapRequest {
   fee?: number;
@@ -58,27 +59,18 @@ interface Route3EvmTokens {
   >;
 }
 
-const xtzAddress = '0x0000000000000000000000000000000000000000';
-
-async function get3RouteEvmTokenPrices(tokens: Route3EvmTokens['tokens']): Promise<Record<string, string>> {
-  const tokensAddresses = Object.keys(tokens).filter(address => address !== xtzAddress);
-
-  const [xtzPrice, etherlinkExchangeRates, geckoterminalExchangeRates] = await Promise.all([
-    getXtzPrice(),
-    getEtherlinkExchangeRates(tokensAddresses),
-    getGeckoterminalExchangeRates(tokensAddresses)
-  ]);
-
-  return {
-    ...geckoterminalExchangeRates,
-    ...etherlinkExchangeRates,
-    [xtzAddress]: xtzPrice
-  };
+interface TokenPrice {
+  priceUSD: string;
+  updatedAt: number;
 }
 
-const route3Api = axios.create({
-  baseURL: 'https://temple-evm.3route.io',
-  headers: { Authorization: `Bearer ${EnvVars.ROUTE3_EVM_API_KEY}` }
+type TokenPrices = Record<string, TokenPrice>;
+
+const xtzAddress = '0x0000000000000000000000000000000000000000';
+const PRICE_RETAIN_MS = 10 * 60_000;
+
+const route3Api = createUpstreamApi('https://temple-evm.3route.io', {
+  Authorization: `Bearer ${EnvVars.ROUTE3_EVM_API_KEY}`
 });
 
 const route3ApiRateLimiter = createRateLimiter('rl-route3-api', 10, 1);
@@ -89,25 +81,80 @@ const fetchRawEvmTokens = withRateLimiter(route3ApiRateLimiter, async () => {
   return data;
 });
 
-export const get3RouteEvmTokensWithPrices = memoizee(
-  async () => {
-    const { tokens } = await fetchRawEvmTokens();
+const tokenCache = createSharedCache({
+  store: route3RedisClient,
+  key: 'cache:3route:42793:tokens:v1',
+  freshMs: 60 * 60_000,
+  retainMs: 24 * 60 * 60_000,
+  fetcher: fetchRawEvmTokens
+});
 
-    const prices = await get3RouteEvmTokenPrices(tokens);
+const priceCache = createSharedCache({
+  store: route3RedisClient,
+  key: 'cache:3route:42793:prices:v1',
+  freshMs: 60_000,
+  retainMs: PRICE_RETAIN_MS,
+  fetcher: async (previous: TokenPrices | undefined): Promise<TokenPrices> => {
+    const { tokens } = await tokenCache.get();
+    const addresses = Object.keys(tokens)
+      .map(address => address.toLowerCase())
+      .filter(address => address !== xtzAddress);
+    const context = { signal: AbortSignal.timeout(20_000) };
+    const [xtzResult, etherlinkResult] = await Promise.allSettled([
+      getXtzPrice(context),
+      getEtherlinkExchangeRates(addresses, context)
+    ]);
+    const etherlinkPrices = etherlinkResult.status === 'fulfilled' ? etherlinkResult.value : {};
+    const missing = addresses.filter(address => !etherlinkPrices[address]);
+    const geckoPrices = await getGeckoterminalExchangeRates(missing, { signal: AbortSignal.timeout(10_000) });
+    const prices: Record<string, string> = { ...geckoPrices, ...etherlinkPrices };
+    if (xtzResult.status === 'fulfilled' && xtzResult.value) prices[xtzAddress] = xtzResult.value;
+    if (Object.keys(prices).length === 0) throw new Error('Token prices are unavailable.');
 
-    return Object.fromEntries(
-      Object.entries(tokens).map(([address, token]) => [
-        getAddress(address),
-        { ...token, address: getAddress(token.address), logoURI: token.logoURI || undefined, priceUSD: prices[address] }
-      ])
+    const now = Date.now();
+    const retained = Object.fromEntries(
+      Object.entries(previous ?? {}).filter(([, price]) => now - price.updatedAt < PRICE_RETAIN_MS)
     );
-  },
-  { promise: true, maxAge: 20000 }
-);
+
+    return {
+      ...retained,
+      ...Object.fromEntries(
+        Object.entries(prices).map(([address, priceUSD]) => [address, { priceUSD, updatedAt: now }])
+      )
+    };
+  }
+});
+
+export const get3RouteEvmTokensWithPrices = async () => {
+  const [{ tokens }, prices = {}] = await Promise.all([tokenCache.get(), priceCache.getOptional()]);
+  const now = Date.now();
+
+  return Object.fromEntries(
+    Object.entries(tokens).map(([address, token]) => {
+      const price = prices[address.toLowerCase()];
+
+      return [
+        getAddress(address),
+        {
+          ...token,
+          address: getAddress(token.address),
+          logoURI: token.logoURI || undefined,
+          priceUSD: price && now - price.updatedAt < PRICE_RETAIN_MS ? price.priceUSD : undefined
+        }
+      ];
+    })
+  );
+};
 
 const fetchRawEvmSwap = withRateLimiter(route3ApiRateLimiter, async (params: Route3EvmSwapRequest) => {
   const { data } = await route3Api.get<Route3EvmSwapResponse>('/api/v6.1/42793/swap', {
-    params: { ...params, includeProtocols: true }
+    params: {
+      ...params,
+      includeProtocols: true,
+      // stXTZ/WXTZ Curve pool (0x74d80ee400d3026fdd2520265cc98300710b25d4) stale oracle causes swaps to revert.
+      // Failed swap example: https://explorer.etherlink.com/tx/0x84398066b3036a25d50e2f01e672730cea2449b6581f8c5f712895fb36f70667
+      excludedProtocols: 'CurveFi/Stable'
+    }
   });
 
   return data;
@@ -116,7 +163,7 @@ const fetchRawEvmSwap = withRateLimiter(route3ApiRateLimiter, async (params: Rou
 const getAmountUSD = (amount: string, decimals: number, priceUSD: string | undefined) =>
   priceUSD ? new Big(amount).div(new Big(10).pow(decimals)).mul(priceUSD).round(2, Big.roundDown).toFixed() : '0.00';
 
-export const get3RouteEvmSwap = withRateLimiter(route3ApiRateLimiter, async (params: Route3EvmSwapRequest) => {
+export const get3RouteEvmSwap = async (params: Route3EvmSwapRequest) => {
   const [{ srcAmount, dstAmount, tx, protocols }, tokensWithPrices] = await Promise.all([
     fetchRawEvmSwap(params),
     get3RouteEvmTokensWithPrices()
@@ -124,6 +171,8 @@ export const get3RouteEvmSwap = withRateLimiter(route3ApiRateLimiter, async (par
   const { to: txDestination, data, gas, gasPrice } = tx;
   const fromToken = tokensWithPrices[getAddress(params.src)];
   const toToken = tokensWithPrices[getAddress(params.dst)];
+
+  if (!fromToken || !toToken) throw new CodedError(400, 'The selected token is unavailable.');
 
   return {
     fromAmount: srcAmount,
@@ -140,4 +189,4 @@ export const get3RouteEvmSwap = withRateLimiter(route3ApiRateLimiter, async (par
     toToken,
     stepsCount: protocols.reduce((sum, { hops }) => sum + hops.length, 0)
   };
-});
+};

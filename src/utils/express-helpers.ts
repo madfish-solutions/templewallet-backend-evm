@@ -1,7 +1,7 @@
 import { RequestHandler } from 'express';
 import { ValidationError } from 'yup';
 
-import { CodedError } from './errors';
+import { CodedError, UpstreamResponseError } from './errors';
 import logger from './logger';
 
 export const withCodedExceptionHandler =
@@ -12,7 +12,9 @@ export const withCodedExceptionHandler =
     } catch (error: any) {
       logger.error(error);
 
-      if (error instanceof CodedError) {
+      if (error instanceof UpstreamResponseError) {
+        res.status(error.status).json(error.body);
+      } else if (error instanceof CodedError) {
         res.status(error.code).send(error.buildResponse());
       } else if (error instanceof ValidationError) {
         res.status(400).send({ error: error.message });
