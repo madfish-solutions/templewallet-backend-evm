@@ -2,7 +2,7 @@ import { RequestHandler, Response } from 'express';
 import { RateLimiterRes } from 'rate-limiter-flexible';
 import { ValidationError } from 'yup';
 
-import { CodedError } from './errors.js';
+import { CodedError, UpstreamResponseError } from './errors.js';
 import logger from './logger.js';
 import { AbortedError } from './rate-limiting.js';
 
@@ -14,7 +14,9 @@ export const withCodedExceptionHandler =
     } catch (error: any) {
       logger.error(error);
 
-      if (error instanceof CodedError) {
+      if (error instanceof UpstreamResponseError) {
+        res.status(error.status).json(error.body);
+      } else if (error instanceof CodedError) {
         res.status(error.code).send(error.buildResponse());
       } else if (error instanceof ValidationError) {
         res.status(400).send({ error: error.message });
