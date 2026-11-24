@@ -5,7 +5,7 @@ import {
   isPrice,
   RequestContext,
   withRateLimiter
-} from './utils';
+} from './utils.js';
 
 interface EtherlinkToken {
   exchange_rate: string | null;

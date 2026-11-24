@@ -1,3 +1,5 @@
+import './configure.js';
+
 const getEnv = (key: string) => process.env[key] ?? '';
 function getEnvNat(key: string, fallback: number): number;
 function getEnvNat(key: string): number | undefined;
@@ -18,7 +20,8 @@ export const EnvVars = {
   ALCHEMY_API_KEY: getEnv('ALCHEMY_API_KEY'),
   ADMIN_USERNAME: getEnv('ADMIN_USERNAME'),
   ADMIN_PASSWORD: getEnv('ADMIN_PASSWORD'),
-  ROUTE3_EVM_API_KEY: getEnv('ROUTE3_EVM_API_KEY')
+  ROUTE3_EVM_API_KEY: getEnv('ROUTE3_EVM_API_KEY'),
+  OPENSEA_API_KEY: getEnv('OPENSEA_API_KEY')
 };
 
 export const PORT = getEnvNat('PORT', 3000);
@@ -30,6 +33,9 @@ export const ALCHEMY_CUPS = getEnvNat('ALCHEMY_CUPS', 500);
 export const ALCHEMY_CONCURRENCY = getEnvNat('ALCHEMY_CONCURRENCY');
 export const ALCHEMY_ATTEMPTS = getEnvNat('ALCHEMY_ATTEMPTS', 5);
 export const ALCHEMY_BACKOFF_DELAY = getEnvNat('ALCHEMY_BACKOFF_DELAY', 1000);
+export const OPENSEA_FORBID_REPEATED_FETCH_TIMEOUT = getEnvNat('OPENSEA_FORBID_REPEATED_FETCH_TIMEOUT', 900000);
+export const OPENSEA_REQUESTS_LIMIT = getEnvNat('OPENSEA_REQUESTS_LIMIT', 120);
+export const OPENSEA_REQUESTS_LIMIT_INTERVAL = getEnvNat('OPENSEA_REQUESTS_LIMIT_INTERVAL', 60000);
 export const IS_TESTING = getEnv('NODE_ENV') === 'test';
 
 for (const name in EnvVars) {

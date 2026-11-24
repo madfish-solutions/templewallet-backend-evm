@@ -1,18 +1,17 @@
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-require('./configure');
-
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import express from 'express';
 import session from 'express-session';
 import { Server } from 'http';
 import { stdSerializers } from 'pino';
-import pinoHttp from 'pino-http';
+import { pinoHttp } from 'pino-http';
+import { parse as qsParse } from 'qs';
 
-import { apiRouter } from './api-router';
-import { setupBullBoard } from './bull-board';
-import { EnvVars, PORT } from './config';
-import logger from './utils/logger';
+import { apiRouter } from './api-router/index.js';
+import { setupBullBoard } from './bull-board.js';
+import { EnvVars, PORT } from './config.js';
+import './configure.js';
+import logger from './utils/logger.js';
 
 export const setupServer = () => {
   const PINO_LOGGER = {
@@ -38,6 +37,7 @@ export const setupServer = () => {
   };
 
   const app = express();
+  app.set('query parser', str => qsParse(str));
   app.use(pinoHttp(PINO_LOGGER));
   app.use(cors());
   app.use(bodyParser.json());

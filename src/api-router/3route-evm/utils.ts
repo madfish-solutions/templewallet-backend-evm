@@ -1,9 +1,9 @@
 import axios, { AxiosInstance } from 'axios';
 import { RateLimiterRedis, RateLimiterRes } from 'rate-limiter-flexible';
 
-import { CodedError, UpstreamResponseError } from '../../utils/errors';
+import { CodedError, UpstreamResponseError } from '../../utils/errors.js';
 
-import { route3RedisClient } from './redis';
+import { route3RedisClient } from './redis.js';
 
 export const UPSTREAM_TIMEOUT_MS = 6000;
 const RATE_LIMIT_WAIT_MS = 2000;

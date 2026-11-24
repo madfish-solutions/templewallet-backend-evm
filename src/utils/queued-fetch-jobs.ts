@@ -1,10 +1,10 @@
 import { Queue, QueueEvents, UnrecoverableError, Worker } from 'bullmq';
 import { RateLimiterRedis, RateLimiterRes } from 'rate-limiter-flexible';
 
-import { IS_TESTING } from '../config';
-import { redisClient } from '../redis';
+import { IS_TESTING } from '../config.js';
+import { redisClient } from '../redis.js';
 
-import { CodedError } from './errors';
+import { CodedError } from './errors.js';
 
 interface QueuedFetchJobsConfig<
   Name extends string,
@@ -80,6 +80,9 @@ export const createQueuedFetchJobs = <
             await rateLimiter.consume('points', costs[name]);
             res();
           } catch (e) {
+            if (e instanceof RateLimiterRes) {
+              await rateLimiter.reward('points', costs[name]);
+            }
             if (Date.now() - waitStartTs > rateLimitTimeout) {
               rej(new UnrecoverableError('Timed out'));
             } else {

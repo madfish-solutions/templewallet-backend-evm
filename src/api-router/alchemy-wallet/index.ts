@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import { RateLimiterRedis } from 'rate-limiter-flexible';
 
-import { createRateLimitMiddleware } from '../../rateLimiter';
-import { redisClient } from '../../redis';
-import { withCodedExceptionHandler } from '../../utils/express-helpers';
+import { redisClient } from '../../redis.js';
+import { withCodedExceptionHandler } from '../../utils/express-helpers.js';
+import { createRateLimitMiddleware } from '../../utils/rate-limiting.js';
 
-import { SUPPORTED_CHAINS } from './config';
-import { prepareSchema, sendSchema, statusSchema } from './schemas';
-import { assertChain, getSubmissionSender, rpc } from './utils';
+import { SUPPORTED_CHAINS } from './config.js';
+import { prepareSchema, sendSchema, statusSchema } from './schemas.js';
+import { assertChain, getSubmissionSender, rpc } from './utils.js';
 
 const limiter = new RateLimiterRedis({
   storeClient: redisClient,

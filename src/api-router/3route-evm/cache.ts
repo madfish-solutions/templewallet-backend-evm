@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 
-import { CodedError } from '../../utils/errors';
+import { CodedError } from '../../utils/errors.js';
 
 interface SharedCacheStore {
   get(key: string): Promise<string | null>;

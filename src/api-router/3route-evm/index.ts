@@ -1,14 +1,14 @@
 import { getAddress } from '@ethersproject/address';
 import Big from 'big.js';
 
-import { EnvVars } from '../../config';
-import { CodedError } from '../../utils/errors';
+import { EnvVars } from '../../config.js';
+import { CodedError } from '../../utils/errors.js';
 
-import { createSharedCache } from './cache';
-import { getEtherlinkExchangeRates, getXtzPrice } from './etherlink';
-import { getGeckoterminalExchangeRates } from './geckoterminal';
-import { route3RedisClient } from './redis';
-import { createRateLimiter, createUpstreamApi, withRateLimiter } from './utils';
+import { createSharedCache } from './cache.js';
+import { getEtherlinkExchangeRates, getXtzPrice } from './etherlink.js';
+import { getGeckoterminalExchangeRates } from './geckoterminal.js';
+import { route3RedisClient } from './redis.js';
+import { createRateLimiter, createUpstreamApi, withRateLimiter } from './utils.js';
 
 interface Route3EvmSwapRequest {
   fee?: number;

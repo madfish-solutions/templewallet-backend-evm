@@ -1,6 +1,6 @@
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 
-import { EnvVars } from '../../config';
+import { EnvVars } from '../../config.js';
 
 // BullMQ requires unlimited retries on its separate Redis connection.
 export const route3RedisClient = new Redis(EnvVars.REDIS_URL, {

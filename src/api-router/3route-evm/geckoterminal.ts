@@ -1,4 +1,4 @@
-import { createRateLimiter, createUpstreamApi, isPrice, RequestContext, withRateLimiter } from './utils';
+import { createRateLimiter, createUpstreamApi, isPrice, RequestContext, withRateLimiter } from './utils.js';
 
 interface GeckoterminalPrices {
   data: { attributes: { token_prices: Record<string, string> } };

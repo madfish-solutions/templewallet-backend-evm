@@ -1,5 +1,5 @@
 import { createBullBoard } from '@bull-board/api';
-import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
+import { BullMQAdapter } from '@bull-board/api/bullMQAdapter.js';
 import { ExpressAdapter } from '@bull-board/express';
 import { ensureLoggedIn } from 'connect-ensure-login';
 import { Express } from 'express';
@@ -7,9 +7,9 @@ import passport from 'passport';
 import { Strategy as LocalStrategy } from 'passport-local';
 import path from 'path';
 
-import { alchemyRequestsQueue } from './api-router/alchemy';
-import { covalentRequestsQueue } from './api-router/covalent';
-import { EnvVars } from './config';
+import { alchemyRequestsQueue } from './api-router/alchemy/index.js';
+import { covalentRequestsQueue } from './api-router/covalent.js';
+import { EnvVars } from './config.js';
 
 passport.use(
   new LocalStrategy(function (username, password, cb) {
@@ -33,7 +33,7 @@ export const setupBullBoard = (app: Express) => {
   const serverAdapter = new ExpressAdapter();
   serverAdapter.setBasePath('/ui');
 
-  app.set('views', path.join(__dirname, '../views'));
+  app.set('views', path.join(import.meta.dirname, '../views'));
   app.set('view engine', 'ejs');
 
   createBullBoard({

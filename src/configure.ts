@@ -3,5 +3,5 @@ import path from 'path';
 
 if (!Boolean(process.env.NETWORK_RPC)) {
   console.log('Applying .env configuration');
-  config({ path: path.join(__dirname, '../.env') });
+  config({ path: path.join(import.meta.dirname, '../.env') });
 }
