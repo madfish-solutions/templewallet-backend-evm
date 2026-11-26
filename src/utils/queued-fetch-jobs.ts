@@ -47,6 +47,7 @@ export const createQueuedFetchJobs = <
   });
   const queue = new Queue<Inputs[Name], Outputs[Name], Name, Inputs[Name], Outputs[Name], Name>(queueName, {
     connection: redisClient,
+    streams: { events: { maxLen: 1000 } },
     defaultJobOptions: {
       attempts,
       backoff: {
@@ -54,7 +55,7 @@ export const createQueuedFetchJobs = <
         delay: backoffDelay
       },
       removeOnComplete: {
-        age: 60 * 60, // 1 hour
+        age: 10 * 60, // 10 minutes
         count: 1000
       },
       removeOnFail: {

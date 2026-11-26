@@ -5,6 +5,7 @@ import { Chain } from 'viem';
 import {
   EnvVars,
   OPENSEA_FORBID_REPEATED_FETCH_TIMEOUT,
+  OPENSEA_NFT_METADATA_CACHE_MAX_SIZE,
   OPENSEA_REQUESTS_LIMIT,
   OPENSEA_REQUESTS_LIMIT_INTERVAL
 } from '../../config.js';
@@ -139,7 +140,7 @@ const getContractIdKey = (contractAddress: string, tokenId: string) =>
   `${contractAddress.toLowerCase()}-${tokenId.toLowerCase()}`;
 
 const updateNftMetadataCache = (values: Record<string, OpenseaNftCacheEntry>, now: number) =>
-  setCachedHmValues(nftMetadataCacheHmKey, values, 1e6, now);
+  setCachedHmValues(nftMetadataCacheHmKey, values, OPENSEA_NFT_METADATA_CACHE_MAX_SIZE, now);
 
 export const getCachedNftsByRefs = async (request: NftRef[]) => {
   const hmHashKeys = getNftMetadataCacheKeys(request);
@@ -206,7 +207,7 @@ export const getNftsByRefs = async (request: NftRef[]) => {
 export const getAccountNfts = async (address: string, chainId: number, collection?: string, next?: string) =>
   withRedisCache(
     getCacheKey('opensea', ['account-nfts', address.toLowerCase(), chainId, collection, next]),
-    10,
+    15 * 60,
     async () => {
       if (!(chainId in openseaChains)) {
         return { nfts: [], next: null };
@@ -242,7 +243,7 @@ export const getAccountNfts = async (address: string, chainId: number, collectio
 export const getAccountCollections = async (address: string, chainIds?: number[], limit?: number, after?: string) =>
   withRedisCache(
     getCacheKey('opensea', ['account-collections', address.toLowerCase(), chainIds?.join(','), limit, after]),
-    10,
+    15 * 60,
     async () => {
       const relevantChains = chainIds ? chainIds.map(chainId => openseaChains[chainId]).filter(Boolean) : undefined;
 
