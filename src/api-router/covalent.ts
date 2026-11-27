@@ -24,11 +24,6 @@ interface CovalentQueueJobsInputs extends Record<CovalentOneChainJobName, { wall
   accountActivity: {
     walletAddress: string;
   };
-  balances: {
-    walletAddress: string;
-    chainId: number;
-    includeNfts?: boolean;
-  };
 }
 
 interface CovalentQueueJobsOutputs {
@@ -40,9 +35,9 @@ interface CovalentQueueJobsOutputs {
 
 function getCovalentJobDeduplicationId(
   name: CovalentQueueJobName,
-  { walletAddress, chainId, includeNfts }: { walletAddress: string; chainId?: number; includeNfts?: boolean }
+  { walletAddress, chainId }: { walletAddress: string; chainId?: number }
 ) {
-  return `${name}:${walletAddress.toLowerCase()}:${chainId}:${includeNfts}`;
+  return `${name}:${walletAddress.toLowerCase()}:${chainId}`;
 }
 const NOT_SUPPORTED_CHAIN_ERROR_REGEX =
   /^\d+\/[a-z0-9-]+ chain not supported, currently supports:(\s*\d+\/[a-z0-9-]+)+/i;
@@ -129,7 +124,7 @@ async function getCovalentResponse(
       response = await client.BalanceService.getTokenBalancesForWalletAddress(
         data.chainId as ChainID,
         data.walletAddress,
-        { nft: data.includeNfts ?? true, noNftAssetMetadata: true, quoteCurrency: 'USD', noSpam: true }
+        { nft: true, noNftAssetMetadata: true, quoteCurrency: 'USD', noSpam: true }
       );
       break;
     case 'tokensMetadata':
@@ -211,7 +206,7 @@ export const getEvmBalances = (
     async () => {
       await beforeCovalentRequest();
 
-      if (includeNfts) return fetch('balances', { walletAddress, chainId, includeNfts });
+      if (includeNfts) return fetch('balances', { walletAddress, chainId });
 
       const tokens = await fetch('tokensMetadata', { walletAddress, chainId });
       await setCachedValue(
