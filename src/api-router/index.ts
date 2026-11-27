@@ -2,8 +2,11 @@ import { Router } from 'express';
 
 import { sendData, withCodedExceptionHandler } from '../utils/express-helpers.js';
 import {
+  covalentCacheLimiter,
+  covalentCacheWalletLimiter,
   covalentLimiter,
   covalentWalletLimiter,
+  createMixedRateLimitCharge,
   createMixedRateLimitMiddleware,
   createRateLimitMiddleware,
   everstakeLimiter,
@@ -48,32 +51,34 @@ import {
 export const apiRouter = Router();
 apiRouter.use('/alchemy', alchemyWalletRouter);
 
+const chargeCovalentRequest = createMixedRateLimitCharge(covalentLimiter, covalentWalletLimiter);
+
 apiRouter
   .get(
     '/balances',
-    createMixedRateLimitMiddleware(covalentLimiter, covalentWalletLimiter),
+    createMixedRateLimitMiddleware(covalentCacheLimiter, covalentCacheWalletLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress, chainId, includeNfts } = await covalentBalancesQueryParamsSchema.validate(req.query);
 
-      sendData(await getEvmBalances(walletAddress, chainId, includeNfts), res);
+      sendData(await getEvmBalances(() => chargeCovalentRequest(req), walletAddress, chainId, includeNfts), res);
     })
   )
   .get(
     '/tokens-metadata',
-    createMixedRateLimitMiddleware(covalentLimiter, covalentWalletLimiter),
+    createMixedRateLimitMiddleware(covalentCacheLimiter, covalentCacheWalletLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress, chainId } = await evmQueryParamsSchema.validate(req.query);
 
-      sendData(await getEvmTokensMetadata(walletAddress, chainId), res);
+      sendData(await getEvmTokensMetadata(() => chargeCovalentRequest(req), walletAddress, chainId), res);
     })
   )
   .get(
     '/collectibles-metadata',
-    createMixedRateLimitMiddleware(covalentLimiter, covalentWalletLimiter),
+    createMixedRateLimitMiddleware(covalentCacheLimiter, covalentCacheWalletLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress, chainId } = await evmQueryParamsSchema.validate(req.query);
 
-      sendData(await getEvmCollectiblesMetadata(walletAddress, chainId), res);
+      sendData(await getEvmCollectiblesMetadata(() => chargeCovalentRequest(req), walletAddress, chainId), res);
     })
   )
   .use('/collectibles-v2', collectiblesV2Router)

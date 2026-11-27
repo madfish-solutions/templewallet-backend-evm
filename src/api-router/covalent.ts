@@ -9,7 +9,7 @@ import {
 import memoizee from 'memoizee';
 
 import { COVALENT_ATTEMPTS, COVALENT_BACKOFF_DELAY, COVALENT_CONCURRENCY, COVALENT_RPS, EnvVars } from '../config.js';
-import { getCacheKey, withRedisCache } from '../utils/cache.js';
+import { getCacheKey, setCachedValue, withRedisCache } from '../utils/cache.js';
 import { CodedError } from '../utils/errors.js';
 import { createQueuedFetchJobs } from '../utils/queued-fetch-jobs.js';
 
@@ -24,11 +24,6 @@ interface CovalentQueueJobsInputs extends Record<CovalentOneChainJobName, { wall
   accountActivity: {
     walletAddress: string;
   };
-  balances: {
-    walletAddress: string;
-    chainId: number;
-    includeNfts?: boolean;
-  };
 }
 
 interface CovalentQueueJobsOutputs {
@@ -40,9 +35,9 @@ interface CovalentQueueJobsOutputs {
 
 function getCovalentJobDeduplicationId(
   name: CovalentQueueJobName,
-  { walletAddress, chainId, includeNfts }: { walletAddress: string; chainId?: number; includeNfts?: boolean }
+  { walletAddress, chainId }: { walletAddress: string; chainId?: number }
 ) {
-  return `${name}:${walletAddress.toLowerCase()}:${chainId}:${includeNfts}`;
+  return `${name}:${walletAddress.toLowerCase()}:${chainId}`;
 }
 const NOT_SUPPORTED_CHAIN_ERROR_REGEX =
   /^\d+\/[a-z0-9-]+ chain not supported, currently supports:(\s*\d+\/[a-z0-9-]+)+/i;
@@ -129,7 +124,7 @@ async function getCovalentResponse(
       response = await client.BalanceService.getTokenBalancesForWalletAddress(
         data.chainId as ChainID,
         data.walletAddress,
-        { nft: data.includeNfts ?? true, noNftAssetMetadata: true, quoteCurrency: 'USD', noSpam: true }
+        { nft: true, noNftAssetMetadata: true, quoteCurrency: 'USD', noSpam: true }
       );
       break;
     case 'tokensMetadata':
@@ -199,25 +194,63 @@ const { fetch, queue } = createQueuedFetchJobs<CovalentQueueJobName, CovalentQue
 
 export const covalentRequestsQueue = queue;
 
-export const getEvmBalances = memoizeAsync((walletAddress: string, chainId: number, includeNfts: boolean) =>
-  withRedisCache(getCovalentCacheKey('balances', walletAddress, chainId, includeNfts), CACHE_TTLS.balances, () =>
-    fetch('balances', { walletAddress, chainId, includeNfts })
-  )
-);
+export const getEvmBalances = (
+  beforeCovalentRequest: () => Promise<void>,
+  walletAddress: string,
+  chainId: number,
+  includeNfts: boolean
+) => {
+  return withRedisCache(
+    getCovalentCacheKey('balances', walletAddress, chainId, includeNfts),
+    CACHE_TTLS.balances,
+    async () => {
+      await beforeCovalentRequest();
 
-export const getEvmTokensMetadata = memoizeAsync((walletAddress: string, chainId: number) =>
-  withRedisCache(getCovalentCacheKey('tokensMetadata', walletAddress, chainId), CACHE_TTLS.tokensMetadata, () =>
-    fetch('tokensMetadata', { walletAddress, chainId })
-  )
-);
+      if (includeNfts) return fetch('balances', { walletAddress, chainId });
 
-export const getEvmCollectiblesMetadata = memoizeAsync((walletAddress: string, chainId: number) =>
-  withRedisCache(
+      const tokens = await fetch('tokensMetadata', { walletAddress, chainId });
+      await setCachedValue(
+        getCovalentCacheKey('tokensMetadata', walletAddress, chainId),
+        tokens,
+        CACHE_TTLS.tokensMetadata
+      );
+
+      return tokens;
+    }
+  );
+};
+
+export const getEvmTokensMetadata = (
+  beforeCovalentRequest: () => Promise<void>,
+  walletAddress: string,
+  chainId: number
+) => {
+  return withRedisCache(
+    getCovalentCacheKey('tokensMetadata', walletAddress, chainId),
+    CACHE_TTLS.tokensMetadata,
+    async () => {
+      await beforeCovalentRequest();
+
+      return fetch('tokensMetadata', { walletAddress, chainId });
+    }
+  );
+};
+
+export const getEvmCollectiblesMetadata = (
+  beforeCovalentRequest: () => Promise<void>,
+  walletAddress: string,
+  chainId: number
+) => {
+  return withRedisCache(
     getCovalentCacheKey('collectiblesMetadata', walletAddress, chainId),
     CACHE_TTLS.collectiblesMetadata,
-    () => fetch('collectiblesMetadata', { walletAddress, chainId })
-  )
-);
+    async () => {
+      await beforeCovalentRequest();
+
+      return fetch('collectiblesMetadata', { walletAddress, chainId });
+    }
+  );
+};
 
 export const getEvmAccountActivity = memoizeAsync((walletAddress: string) =>
   withRedisCache(getCovalentCacheKey('accountActivity', walletAddress), CACHE_TTLS.accountActivity, () =>

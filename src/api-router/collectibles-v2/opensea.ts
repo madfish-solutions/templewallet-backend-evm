@@ -149,7 +149,7 @@ export const getCachedNftsByRefs = async (request: NftRef[]) => {
   return results.map(entry => entry ?? null);
 };
 
-export const getNftsByRefs = async (request: NftRef[]) => {
+export const getNftsByRefs = async (beforeOpenseaRequest: () => Promise<void>, request: NftRef[]) => {
   const refsByContractIdKeys = Object.fromEntries(
     request.map(ref => [getContractIdKey(ref.contractAddress, ref.tokenId), ref])
   );
@@ -167,6 +167,8 @@ export const getNftsByRefs = async (request: NftRef[]) => {
       chain: openseaChains[chainId],
       ...restProps
     }));
+
+  if (requestInput.length) await beforeOpenseaRequest();
 
   now = Date.now();
   const { nfts } = requestInput.length
@@ -204,7 +206,13 @@ export const getNftsByRefs = async (request: NftRef[]) => {
   });
 };
 
-export const getAccountNfts = async (address: string, chainId: number, collection?: string, next?: string) =>
+export const getAccountNfts = async (
+  beforeOpenseaRequest: () => Promise<void>,
+  address: string,
+  chainId: number,
+  collection?: string,
+  next?: string
+) =>
   withRedisCache(
     getCacheKey('opensea', ['account-nfts', address.toLowerCase(), chainId, collection, next]),
     15 * 60,
@@ -212,6 +220,8 @@ export const getAccountNfts = async (address: string, chainId: number, collectio
       if (!(chainId in openseaChains)) {
         return { nfts: [], next: null };
       }
+
+      await beforeOpenseaRequest();
 
       const now = Date.now();
       const data = await makeAccountNftsRequest({
@@ -240,7 +250,13 @@ export const getAccountNfts = async (address: string, chainId: number, collectio
     }
   );
 
-export const getAccountCollections = async (address: string, chainIds?: number[], limit?: number, after?: string) =>
+export const getAccountCollections = async (
+  beforeOpenseaRequest: () => Promise<void>,
+  address: string,
+  chainIds?: number[],
+  limit?: number,
+  after?: string
+) =>
   withRedisCache(
     getCacheKey('opensea', ['account-collections', address.toLowerCase(), chainIds?.join(','), limit, after]),
     15 * 60,
@@ -250,6 +266,8 @@ export const getAccountCollections = async (address: string, chainIds?: number[]
       if (relevantChains?.length === 0) {
         return { collections: [], next: null };
       }
+
+      await beforeOpenseaRequest();
 
       return await makeAccountCollectionsRequest({
         sdk: getOpenseaSdk(),
@@ -263,6 +281,7 @@ export const getAccountCollections = async (address: string, chainIds?: number[]
   );
 
 export const getOpenseaSearch = async (
+  beforeOpenseaRequest: () => Promise<void>,
   query: string,
   assetTypes: SearchAssetType[],
   chainIds?: number[],
@@ -277,6 +296,8 @@ export const getOpenseaSearch = async (
       if (relevantChains?.length === 0) {
         return { results: [], next: null };
       }
+
+      await beforeOpenseaRequest();
 
       return await makeSearchRequest({
         sdk: getOpenseaSdk(),
