@@ -1,7 +1,22 @@
 import { NextFunction, Request, Response } from 'express';
+import noop from 'lodash/noop.js';
 import { RateLimiterRedis, RateLimiterRes } from 'rate-limiter-flexible';
 
 import { redisClient } from '../redis.js';
+
+export const covalentCacheLimiter = new RateLimiterRedis({
+  storeClient: redisClient,
+  keyPrefix: 'rl-covalent-cache',
+  points: 300,
+  duration: 60
+});
+
+export const covalentCacheWalletLimiter = new RateLimiterRedis({
+  storeClient: redisClient,
+  keyPrefix: 'rl-covalent-cache-wallet',
+  points: 300,
+  duration: 60
+});
 
 export const covalentLimiter = new RateLimiterRedis({
   storeClient: redisClient,
@@ -171,21 +186,43 @@ export const withRateLimitWaiting = <A extends unknown[], R>(
   };
 };
 
+export class TooManyRequestsError extends Error {
+  constructor(public readonly retryAfterMs: number) {
+    super('Too many requests. Please try again later');
+  }
+}
+
+export const sendTooManyRequests = (res: Response, retryAfterMs: number) => {
+  res.setHeader('Retry-After', Math.ceil(retryAfterMs / 1000));
+  res.status(429).json({
+    error: 'Too many requests. Please try again later'
+  });
+};
+
 export const createRateLimitMiddleware = (
   limiter: RateLimiterRedis,
   keyGenerator: KeyGenerator = getIpKey,
   onSuccess: (req: Request, res: Response, next: NextFunction) => void = (_, _2, next) => next()
 ) =>
-  makeRateLimitConsumer<[Request, Response, NextFunction]>(limiter, keyGenerator, onSuccess, (retryAfterMs, _, res) => {
-    res.setHeader('Retry-After', Math.ceil(retryAfterMs / 1000));
-    res.status(429).json({
-      error: 'Too many requests. Please try again later'
-    });
-  });
+  makeRateLimitConsumer<[Request, Response, NextFunction]>(limiter, keyGenerator, onSuccess, (retryAfterMs, _, res) =>
+    sendTooManyRequests(res, retryAfterMs)
+  );
 
 export const createMixedRateLimitMiddleware = (ipRateLimiter: RateLimiterRedis, walletRateLimiter: RateLimiterRedis) =>
   createRateLimitMiddleware(
     ipRateLimiter,
     getIpKey,
     createRateLimitMiddleware(walletRateLimiter, walletAddressKeyGenerator)
+  );
+
+const throwTooManyRequests = (retryAfterMs: number): never => {
+  throw new TooManyRequestsError(retryAfterMs);
+};
+
+export const createMixedRateLimitCharge = (ipRateLimiter: RateLimiterRedis, walletRateLimiter: RateLimiterRedis) =>
+  makeRateLimitConsumer<[Request]>(
+    ipRateLimiter,
+    getIpKey,
+    makeRateLimitConsumer<[Request]>(walletRateLimiter, walletAddressKeyGenerator, noop, throwTooManyRequests),
+    throwTooManyRequests
   );

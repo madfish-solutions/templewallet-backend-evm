@@ -4,7 +4,7 @@ import { ValidationError } from 'yup';
 
 import { CodedError, UpstreamResponseError } from './errors.js';
 import logger from './logger.js';
-import { AbortedError } from './rate-limiting.js';
+import { AbortedError, sendTooManyRequests, TooManyRequestsError } from './rate-limiting.js';
 
 export const withCodedExceptionHandler =
   (handler: RequestHandler): RequestHandler =>
@@ -12,6 +12,12 @@ export const withCodedExceptionHandler =
     try {
       await handler(req, res, next);
     } catch (error: any) {
+      if (error instanceof TooManyRequestsError) {
+        sendTooManyRequests(res, error.retryAfterMs);
+
+        return;
+      }
+
       logger.error(error);
 
       if (error instanceof UpstreamResponseError) {

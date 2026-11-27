@@ -1,7 +1,7 @@
 import { Router } from 'express';
 
 import { sendData, withCodedExceptionHandler } from '../../utils/express-helpers.js';
-import { createMixedRateLimitMiddleware } from '../../utils/rate-limiting.js';
+import { createMixedRateLimitCharge, createMixedRateLimitMiddleware } from '../../utils/rate-limiting.js';
 import { fetchEvmCollectibles, fetchEvmCollectiblesContracts } from '../alchemy/index.js';
 
 import {
@@ -31,6 +31,8 @@ import {
 
 export const collectiblesV2Router = Router();
 
+const chargeOpenseaRequest = createMixedRateLimitCharge(openseaLimiter, openseaWalletLimiter);
+
 collectiblesV2Router
   .post(
     '/opensea/by-refs/cached',
@@ -43,42 +45,57 @@ collectiblesV2Router
   )
   .post(
     '/opensea/by-refs',
-    createMixedRateLimitMiddleware(openseaLimiter, openseaWalletLimiter),
+    createMixedRateLimitMiddleware(openseaCacheLimiter, openseaCacheWalletLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const input = await openseaCollectiblesByRefsBodySchema.validate(req.body);
 
-      sendData(await getNftsByRefs(input), res);
+      sendData(await getNftsByRefs(() => chargeOpenseaRequest(req), input), res);
     })
   )
   .get(
     '/opensea/by-account',
-    createMixedRateLimitMiddleware(openseaLimiter, openseaWalletLimiter),
+    createMixedRateLimitMiddleware(openseaCacheLimiter, openseaCacheWalletLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { chainId, walletAddress, collection, next } = await openseaAccountNftsQueryParamsSchema.validate(
         req.query
       );
 
-      sendData(await getOpenseaAccountNfts(walletAddress, chainId, collection, next), res);
+      sendData(
+        await getOpenseaAccountNfts(() => chargeOpenseaRequest(req), walletAddress, chainId, collection, next),
+        res
+      );
     })
   )
   .get(
     '/opensea/account-collections',
-    createMixedRateLimitMiddleware(openseaLimiter, openseaWalletLimiter),
+    createMixedRateLimitMiddleware(openseaCacheLimiter, openseaCacheWalletLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { walletAddress, chainIds, limit, after } = await openseaAccountCollectionsQueryParamsSchema.validate(
         req.query
       );
 
-      sendData(await getOpenseaAccountCollections(walletAddress, chainIds, limit, after), res);
+      sendData(
+        await getOpenseaAccountCollections(() => chargeOpenseaRequest(req), walletAddress, chainIds, limit, after),
+        res
+      );
     })
   )
   .get(
     '/opensea/search',
-    createMixedRateLimitMiddleware(openseaLimiter, openseaWalletLimiter),
+    createMixedRateLimitMiddleware(openseaCacheLimiter, openseaCacheWalletLimiter),
     withCodedExceptionHandler(async (req, res) => {
       const { query, chainIds, limit, assetTypes } = await openseaSearchQueryParamsSchema.validate(req.query);
 
-      sendData(await getOpenseaSearch(query, assetTypes ?? ['collection', 'nft'], chainIds, limit), res);
+      sendData(
+        await getOpenseaSearch(
+          () => chargeOpenseaRequest(req),
+          query,
+          assetTypes ?? ['collection', 'nft'],
+          chainIds,
+          limit
+        ),
+        res
+      );
     })
   )
   .get(

@@ -5,14 +5,14 @@ import { redisClient } from '../../redis.js';
 export const openseaCacheLimiter = new RateLimiterRedis({
   storeClient: redisClient,
   keyPrefix: 'rl-opensea-cache',
-  points: 30,
+  points: 300,
   duration: 60
 });
 
 export const openseaCacheWalletLimiter = new RateLimiterRedis({
   storeClient: redisClient,
   keyPrefix: 'rl-opensea-cache-wallet',
-  points: 30,
+  points: 300,
   duration: 60
 });
 
